@@ -26,3 +26,8 @@ sudo editor /etc/xapi-portal.env
 ```
 
 Set your public API base URL with `NW_API_BASE_URL`.
+
+
+## Release notes
+
+- V0.0.002: docs/changelog/V0.0.002.md
