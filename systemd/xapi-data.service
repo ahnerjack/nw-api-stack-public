@@ -1,0 +1,15 @@
+[Unit]
+Description=NW-API local data API bridge
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/xapi-data/xapi_data_api.py
+Restart=always
+RestartSec=3
+User=root
+WorkingDirectory=/opt/xapi-data
+
+[Install]
+WantedBy=multi-user.target

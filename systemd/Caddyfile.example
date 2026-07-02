@@ -1,0 +1,41 @@
+# Example Caddyfile for NW-API public deployment.
+# Copy to your server and replace example.com with your own domain.
+
+api.example.com {
+    encode zstd gzip
+
+    handle_path /downloads/* {
+        root * /srv/nw-api-downloads
+        file_server
+    }
+
+    handle /v1/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle /login {
+        reverse_proxy 127.0.0.1:18180
+    }
+    handle /dashboard* {
+        reverse_proxy 127.0.0.1:18180
+    }
+    handle /keys* {
+        reverse_proxy 127.0.0.1:18180
+    }
+    handle /usage* {
+        reverse_proxy 127.0.0.1:18180
+    }
+    handle /billing* {
+        reverse_proxy 127.0.0.1:18180
+    }
+    handle /docs* {
+        reverse_proxy 127.0.0.1:18180
+    }
+    handle /pricing* {
+        reverse_proxy 127.0.0.1:18180
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:18180
+    }
+}
