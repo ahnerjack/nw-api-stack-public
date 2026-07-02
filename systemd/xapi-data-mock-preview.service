@@ -1,0 +1,15 @@
+[Unit]
+Description=NW-API preview mock data service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/nw-api-preview/xapi-data-mock/xapi_data_mock.py
+Restart=always
+RestartSec=3
+User=root
+WorkingDirectory=/opt/nw-api-preview/xapi-data-mock
+
+[Install]
+WantedBy=multi-user.target
