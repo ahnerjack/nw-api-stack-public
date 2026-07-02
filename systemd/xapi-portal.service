@@ -1,0 +1,16 @@
+[Unit]
+Description=XAPI white-label portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/xapi-portal.env
+ExecStart=/usr/bin/python3 /opt/xapi-portal/xapi_portal.py
+Restart=always
+RestartSec=3
+User=root
+WorkingDirectory=/opt/xapi-portal
+
+[Install]
+WantedBy=multi-user.target
