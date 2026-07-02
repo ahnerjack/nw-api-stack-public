@@ -1,0 +1,15 @@
+[Unit]
+Description=NW-API Git preview gateway on :8888
+After=network-online.target xapi-portal-preview.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/nw-api-preview/preview-nav/preview_gateway.py
+Restart=always
+RestartSec=3
+User=root
+WorkingDirectory=/opt/nw-api-preview/preview-nav
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=NW-API Git preview portal
+After=network-online.target xapi-data-mock-preview.service
+Wants=network-online.target xapi-data-mock-preview.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+Environment=NW_API_PAYMENT_NOTICE=PREVIEW
+Environment=XAPI_ADMIN_EMAIL=preview-admin@example.test
+Environment=XAPI_ADMIN_PASS=change-me-locally
+Environment=XAPI_DATA_BASE=http://127.0.0.1:18184/xapi-data
+ExecStart=/usr/bin/python3 /opt/nw-api-preview/xapi-portal/xapi_portal.py
+Restart=always
+RestartSec=3
+User=root
+WorkingDirectory=/opt/nw-api-preview/xapi-portal
+
+[Install]
+WantedBy=multi-user.target
