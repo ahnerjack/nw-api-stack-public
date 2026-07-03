@@ -1,0 +1,12 @@
+# runtime data / secrets
+*.db
+*.sqlite*
+*.bak*
+*.pyc
+__pycache__/
+.env
+*.env
+*.key
+*.pem
+*.log
+.DS_Store
