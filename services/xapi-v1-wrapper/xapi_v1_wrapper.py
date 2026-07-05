@@ -164,6 +164,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.proxy()
 
+    def do_HEAD(self):
+        self.proxy()
+
     def do_POST(self):
         self.proxy()
 
@@ -275,28 +278,43 @@ class Handler(BaseHTTPRequestHandler):
             return self.forward_http_error(exc, portal_user, key_id, cip, model, started)
         with response:
             self.send_response(response.status)
-            has_content_length = False
+            content_length = None
             for key, value in response.headers.items():
                 lower = key.lower()
                 if lower == 'content-length':
-                    has_content_length = True
+                    try:
+                        content_length = int(value)
+                    except ValueError:
+                        content_length = None
                     self.send_header(key, value)
                 elif lower not in HOP_BY_HOP_HEADERS:
                     self.send_header(key, value)
-            chunked_downstream = not has_content_length
+            chunked_downstream = content_length is None and self.command != 'HEAD'
             if chunked_downstream:
                 self.send_header('Transfer-Encoding', 'chunked')
             self.send_header('X-Accel-Buffering', 'no')
             self.send_header('Cache-Control', 'no-cache')
             self.send_header('Connection', 'keep-alive')
             self.end_headers()
-            self.stream_response(response, chunked_downstream)
-            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=response.status, latency_ms=self.elapsed(started))
+            try:
+                if self.command != 'HEAD':
+                    self.stream_response(response, chunked_downstream, content_length)
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=response.status, latency_ms=self.elapsed(started))
+            except socket.timeout:
+                self.close_connection = True
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=504, error_code='UPSTREAM_STREAM_TIMEOUT', latency_ms=self.elapsed(started))
+            except BrokenPipeError:
+                self.close_connection = True
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=499, error_code='CLIENT_CLOSED', latency_ms=self.elapsed(started))
 
-    def stream_response(self, response, chunked_downstream):
+    def stream_response(self, response, chunked_downstream, content_length=None):
         sock = response.fp.raw._sock  # stdlib HTTPResponse socket; used for idle timeout between chunks.
+        sock.settimeout(STREAM_IDLE_TIMEOUT)
         deadline = time.monotonic() + UPSTREAM_TIMEOUT
+        remaining_body = content_length
         while True:
+            if remaining_body is not None and remaining_body <= 0:
+                break
             remaining_total = deadline - time.monotonic()
             if remaining_total <= 0:
                 raise socket.timeout('upstream total timeout')
@@ -304,9 +322,12 @@ class Handler(BaseHTTPRequestHandler):
             ready, _, _ = select.select([sock], [], [], wait)
             if not ready:
                 raise socket.timeout('upstream stream idle timeout')
-            chunk = response.read(STREAM_CHUNK_SIZE)
+            read_size = STREAM_CHUNK_SIZE if remaining_body is None else min(STREAM_CHUNK_SIZE, remaining_body)
+            chunk = response.read(read_size)
             if not chunk:
                 break
+            if remaining_body is not None:
+                remaining_body -= len(chunk)
             if chunked_downstream:
                 self.wfile.write((f'{len(chunk):X}\r\n').encode('ascii'))
                 self.wfile.write(chunk)
