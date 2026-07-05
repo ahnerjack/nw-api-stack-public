@@ -21,6 +21,8 @@ PACKAGE_FILES = [
     "services/xapi-portal/xapi_portal.py",
     "services/xapi-portal/sync_model_prices.py",
     "services/xapi-data/xapi_data_api.py",
+    "services/xapi-v1-wrapper/xapi_v1_wrapper.py",
+    "services/xapi-v1-wrapper/README.md",
     "services/hermes-portal/index.html",
     "services/dh-nav/index.html",
     "systemd/xapi-portal.service",
