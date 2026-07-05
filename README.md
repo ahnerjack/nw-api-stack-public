@@ -5,6 +5,7 @@ Private source backup and deployment repo for NW-API portal, xapi-data bridge, a
 ## Components
 
 - `services/xapi-portal/xapi_portal.py` — public white-label NW-API portal on Alibaba Cloud.
+- `services/xapi-v1-wrapper/xapi_v1_wrapper.py` — `/v1/*` policy wrapper with SSE-safe upstream streaming.
 - `services/xapi-data/xapi_data_api.py` — local data bridge to Sub2API/Postgres/Redis.
 - `services/dh-nav/index.html` — `dh.ahner.cn` navigation page.
 - `systemd/*.service` — non-secret service unit templates/current units.
