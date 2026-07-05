@@ -447,7 +447,7 @@ def inline_update_log(st):
     return '<div class="release-log muted">暂无发布说明。</div>'
 
 def inline_update_script():
-    return "<script>\nfunction nwInlineUpdate(form){\n  if(!form) return false;\n  const btn=form.querySelector('button');\n  if(!btn) return false;\n  const old=btn.textContent;\n  btn.disabled=true; btn.textContent='更新中...';\n  fetch(form.action,{method:'POST',body:new URLSearchParams(new FormData(form)),credentials:'same-origin',headers:{'X-Requested-With':'fetch','Content-Type':'application/x-www-form-urlencoded'}})\n    .then(r=>r.text().then(t=>({ok:r.ok,text:t})))\n    .then(x=>{btn.textContent=x.ok?'已开始更新':'更新失败'; const box=form.querySelector('.inline-update-result')||document.createElement('div'); box.className='inline-update-result'; box.textContent=x.ok?'已开始后台更新，稍后刷新本页查看。':x.text.replace(/<[^>]+>/g,' ').slice(0,160); form.appendChild(box); if(x.ok){setTimeout(()=>location.reload(),12000)}})\n    .catch(e=>{btn.textContent='更新失败'; alert(e)})\n    .finally(()=>{setTimeout(()=>{btn.disabled=false; btn.textContent=old},5000)});\n  return false;\n}\n</script>"
+    return "<script>\nfunction nwInlineUpdate(form){\n  if(!form) return false;\n  const btn=form.querySelector('button');\n  if(!btn) return false;\n  const old=btn.textContent;\n  btn.disabled=true; btn.textContent='更新中...';\n  fetch(form.action,{method:'POST',body:new URLSearchParams(new FormData(form)),credentials:'same-origin',headers:{'X-Requested-With':'fetch','Content-Type':'application/x-www-form-urlencoded'}})\n    .then(r=>r.text().then(t=>({ok:r.ok,text:t})))\n    .then(x=>{btn.textContent=x.ok?'已开始更新':'更新失败'; const box=form.querySelector('.inline-update-result')||document.createElement('div'); box.className='inline-update-result'; box.textContent=x.ok?'已开始后台更新，稍后刷新本页查看。':x.text.replace(/<[^>]+>/g,' ').slice(0,160); form.appendChild(box); if(x.ok){setTimeout(()=>location.reload(),12000)}})\n    .catch(e=>{btn.textContent='更新失败'; alert(e)})\n    .finally(()=>{setTimeout(()=>{btn.disabled=false; btn.textContent=old},5000)});\n  return false;\n}\nfunction nwLoadVersionStatus(details,force){\n  if(!details) return;\n  const box=details.querySelector('.release-menu-body');\n  if(!box) return;\n  if(details.getAttribute('data-loaded')==='1' && !force) return;\n  details.setAttribute('data-loaded','1');\n  box.innerHTML='<div class=\"release-status\"><div class=\"release-card-body\"><div class=\"release-sub\">检查更新中...</div></div></div>';\n  fetch('/version-status'+(force?'?force=1':''),{credentials:'same-origin',cache:'no-store'})\n    .then(r=>r.text())\n    .then(t=>{box.innerHTML=t})\n    .catch(e=>{details.removeAttribute('data-loaded'); box.innerHTML='<div class=\"release-status\"><div class=\"release-card-body\"><div class=\"release-sub\" style=\"color:#991b1b\">检查失败</div></div></div>'});\n}\ndocument.addEventListener('toggle',function(e){if(e.target&&e.target.classList&&e.target.classList.contains('release-menu')&&e.target.open)nwLoadVersionStatus(e.target,false)},true);\n</script>"
 
 def sensitive_fields(u, label='操作备注'):
     return csrf_field(u)+'<input name="admin_password" type="password" placeholder="管理员密码" style="width:120px"><input name="admin_note" placeholder="'+label+'" style="width:160px" required>'
@@ -469,16 +469,8 @@ def version_update_widget(user):
     label=f'{APP_VERSION}'
     if not user or user.get('role')!='admin':
         return release_version_menu(label)
-    st=update_state(False)
-    release_url=st.get('release_url') or ('https://github.com/ahnerjack/nw-api-stack-public/releases/tag/'+APP_VERSION)
-    if st.get('available'):
-        tag=st.get('remote_tag') or st.get('remote') or ''
-        card=f'<div class="release-status"><div class="release-card-head"><span class="release-card-title">当前版本</span></div><div class="release-card-body"><div class="release-current">{esc(APP_VERSION)}</div><div class="release-sub" style="color:#b45309">最新：{esc(tag)}</div><div class="release-action-card"><div class="release-action-icon">↓</div><div><div class="release-action-title">发现可用更新</div><div class="release-action-sub">{esc(tag)}</div></div></div><form method="post" action="admin-update/apply" class="release-update-form" onsubmit="return nwInlineUpdate(this)">{csrf_field(user)}<button class="release-primary-btn" type="submit">↓ 立即更新</button><div class="inline-update-result muted"></div></form><a class="release-muted-link" href="{esc(release_url)}" target="_blank" rel="noopener">查看更新日志 ↗</a></div></div>'
-    elif st.get('ok'):
-        card=f'<div class="release-status"><div class="release-card-head"><span class="release-card-title">当前版本</span></div><div class="release-card-body"><div class="release-current">{esc(APP_VERSION)} <span class="release-ok-dot">✓</span></div><div class="release-sub">已是最新</div><a class="release-muted-link" href="{esc(release_url)}" target="_blank" rel="noopener">查看发布 ↗</a></div></div>'
-    else:
-        card=f'<div class="release-status"><div class="release-card-head"><span class="release-card-title">当前版本</span></div><div class="release-card-body"><div class="release-sub" style="color:#991b1b">检查更新失败</div><div class="release-sub" style="color:#991b1b">稍后再试</div></div></div>'
-    return f'''<details class="release-menu"><summary><span class="version-pill">{label}</span></summary><div>{card}</div></details>'''
+    placeholder='<div class="release-status"><div class="release-card-head"><span class="release-card-title">当前版本</span></div><div class="release-card-body"><div class="release-current">'+esc(APP_VERSION)+'</div><div class="release-sub">展开后检查更新</div></div></div>'
+    return f'''<details class="release-menu"><summary><span class="version-pill">{label}</span></summary><div class="release-menu-body">{placeholder}</div></details>'''
 
 def shell(title, body, user, active='dashboard'):
     base_nav=[
@@ -1368,7 +1360,9 @@ console.log(res.choices[0].message.content);</pre></div>
         if not u: return self.sendh('<div class="release-status muted">请先登录。</div>',401)
         if u.get('role')!='admin':
             return self.sendh(release_version_menu(APP_VERSION),403)
-        st=update_state(False)
+        qs=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        force=qs.get('force',['0'])[0].lower() in ('1','true','yes','on')
+        st=update_state(force)
         release_url=st.get('release_url') or ('https://github.com/ahnerjack/nw-api-stack-public/releases/tag/'+APP_VERSION)
         head='<div class="release-card-head"><span class="release-card-title">当前版本</span><button class="release-refresh" type="button" onclick="this.closest(\'details\').removeAttribute(\'data-loaded\');nwLoadVersionStatus(this.closest(\'details\'),true)">刷新</button></div>'
         if st.get('available'):
