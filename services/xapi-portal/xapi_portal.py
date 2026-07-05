@@ -92,8 +92,13 @@ def run_cmd(args, cwd=REPO_DIR, timeout=8):
     return subprocess.run(args, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
 
 def version_key(v):
-    nums=[int(x) for x in re.findall(r'\d+', str(v or ''))]
-    return nums or [0]
+    s=str(v or '')
+    nums=[int(x) for x in re.findall(r'\d+', s)]
+    if re.match(r'^[Vv]\.', s) and len(nums)==2:
+        nums=[nums[0],0,nums[1]]
+    while len(nums)<4:
+        nums.append(0)
+    return tuple(nums[:4])
 
 def github_api(path, token=None, timeout=12):
     headers={'Accept':'application/vnd.github+json','User-Agent':'nw-api-release-checker'}
@@ -313,8 +318,13 @@ def sync_model_prices():
         return {'ok':False,'error':str(e)}
 
 def price_rows():
-    sync_model_prices()
     con=db(); con.row_factory=sqlite3.Row
+    try:
+        meta0=con.execute('SELECT synced_at FROM model_price_sync WHERE id=1').fetchone()
+        if not meta0 or int(meta0['synced_at'] or 0) < int(time.time())-600:
+            sync_model_prices()
+    except Exception:
+        pass
     rows=con.execute('SELECT model,input_price,output_price,cache_price,image_price,note FROM model_prices ORDER BY CASE model WHEN "gpt-5.5" THEN 1 WHEN "gpt-5.4" THEN 2 WHEN "gpt-5.4-mini" THEN 3 ELSE 99 END, model').fetchall()
     meta=con.execute('SELECT source,unit,synced_at,upstream_updated_at,status,error FROM model_price_sync WHERE id=1').fetchone()
     con.close(); return rows,meta
