@@ -168,6 +168,21 @@ def update_state(force=False):
         return release_update_state(force)
     return git_update_state(force)
 
+def git_update_state_local():
+    data={'ok':False,'available':False,'local':'','remote':'','remote_tag':'','branch':UPDATE_BRANCH or 'public-sanitized','error':''}
+    try:
+        if not os.path.isdir(os.path.join(REPO_DIR,'.git')):
+            raise RuntimeError('git repo not found: '+REPO_DIR)
+        local=run_cmd(['git','rev-parse','--short','HEAD']).stdout.strip()
+        current_branch=run_cmd(['git','rev-parse','--abbrev-ref','HEAD']).stdout.strip()
+        branch=UPDATE_BRANCH or current_branch or 'public-sanitized'
+        remote=run_cmd(['git','rev-parse','--short',f'origin/{branch}']).stdout.strip()
+        remote_tag=run_cmd(['git','describe','--tags','--exact-match',f'origin/{branch}'], timeout=3).stdout.strip()
+        data={'ok':True,'available':bool(local and remote and local!=remote),'local':local,'remote':remote,'remote_tag':remote_tag,'branch':branch,'error':'','warning':''}
+    except Exception as e:
+        data['error']=str(e)[:300]
+    return data
+
 def git_update_state(force=False):
     now=time.time()
     if not force and now-UPDATE_CACHE.get('ts',0) < 120:
@@ -1362,7 +1377,9 @@ console.log(res.choices[0].message.content);</pre></div>
             return self.sendh(release_version_menu(APP_VERSION),403)
         qs=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         force=qs.get('force',['0'])[0].lower() in ('1','true','yes','on')
-        st=update_state(force)
+        st=update_state(force) if force else (UPDATE_CACHE.get('data') if UPDATE_CACHE.get('data',{}).get('ok') else git_update_state_local())
+        if not st:
+            st={}
         release_url=st.get('release_url') or ('https://github.com/ahnerjack/nw-api-stack-public/releases/tag/'+APP_VERSION)
         head='<div class="release-card-head"><span class="release-card-title">当前版本</span><button class="release-refresh" type="button" onclick="this.closest(\'details\').removeAttribute(\'data-loaded\');nwLoadVersionStatus(this.closest(\'details\'),true)">刷新</button></div>'
         if st.get('available'):
