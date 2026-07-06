@@ -65,6 +65,65 @@ class GatewayCoreTests(unittest.TestCase):
         self.assertFalse(core.should_chunk_downstream(None, 'HEAD'))
         self.assertEqual(core.encode_chunk(b'abc'), b'3\r\nabc\r\n')
 
+    def test_policy_result_helpers(self):
+        ok = core.PolicyResult.allow(user_id=1)
+        self.assertTrue(ok.allowed)
+        self.assertEqual(ok.context['user_id'], 1)
+        bad = core.PolicyResult.deny('NOPE', 'blocked', 403, rule='x')
+        self.assertFalse(bad.allowed)
+        self.assertEqual(bad.error_code, 'NOPE')
+        self.assertEqual(bad.error_message, 'blocked')
+        self.assertEqual(bad.http_status, 403)
+        self.assertEqual(bad.context['rule'], 'x')
+
+    def test_ip_risk_policy(self):
+        req = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.2.3.4', 'rid')
+        self.assertTrue(core.IPRiskPolicy(lambda ip: (True, '')).evaluate(req).allowed)
+        r = core.IPRiskPolicy(lambda ip: (False, '1.2.3.0/24')).evaluate(req)
+        self.assertFalse(r.allowed)
+        self.assertEqual(r.error_code, 'IP_BLOCKED')
+        self.assertEqual(r.http_status, 403)
+
+    def test_auth_policy_paths(self):
+        req_missing = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.1.1.1', 'rid')
+        r = core.AuthPolicy(lambda key: {'ok': True}, lambda uid: {'id': 7}).evaluate(req_missing)
+        self.assertFalse(r.allowed)
+        self.assertEqual(r.error_code, 'INVALID_API_KEY')
+        self.assertEqual(r.http_status, 401)
+
+        req = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.1.1.1', 'rid', api_key='sk-ok')
+        r = core.AuthPolicy(lambda key: {'ok': True, 'user_id': 9, 'key_id': 3}, lambda uid: {'id': 7}).evaluate(req)
+        self.assertTrue(r.allowed)
+        self.assertEqual(r.context['sub2_uid'], 9)
+        self.assertEqual(r.context['key_id'], 3)
+        self.assertEqual(r.context['portal_user']['id'], 7)
+
+        r = core.AuthPolicy(lambda key: {'ok': False, 'code': 'BAD', 'message': 'bad key'}, lambda uid: None).evaluate(req)
+        self.assertFalse(r.allowed)
+        self.assertEqual(r.error_code, 'BAD')
+        self.assertEqual(r.error_message, 'bad key')
+
+        r = core.AuthPolicy(lambda key: {'ok': True, 'user_id': 9, 'key_id': 3}, lambda uid: None).evaluate(req)
+        self.assertFalse(r.allowed)
+        self.assertEqual(r.error_code, 'ACCOUNT_DISABLED')
+
+        def boom(key):
+            raise RuntimeError('down')
+        r = core.AuthPolicy(boom, lambda uid: {'id': 7}).evaluate(req)
+        self.assertFalse(r.allowed)
+        self.assertEqual(r.error_code, 'INVALID_API_KEY')
+
+    def test_model_allow_policy(self):
+        req = core.NormalizedRequest('POST', '/v1/chat/completions', {}, b'', '1.1.1.1', 'rid', model='gpt-5.5')
+        r = core.ModelAllowPolicy(lambda uid: {'gpt-5.5'}).evaluate(req, {'portal_user': {'id': 7}})
+        self.assertTrue(r.allowed)
+        r = core.ModelAllowPolicy(lambda uid: {'gpt-5.4'}).evaluate(req, {'portal_user': {'id': 7}})
+        self.assertFalse(r.allowed)
+        self.assertEqual(r.error_code, 'MODEL_NOT_ALLOWED')
+        self.assertEqual(r.http_status, 403)
+        empty = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.1.1.1', 'rid')
+        self.assertTrue(core.ModelAllowPolicy(lambda uid: set()).evaluate(empty, {}).allowed)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

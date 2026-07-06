@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 import re
 import secrets
-from dataclasses import dataclass
-from typing import Mapping
+from dataclasses import dataclass, field
+from typing import Callable, Mapping, Any
 
 REQUEST_ID_HEADER = 'X-Request-Id'
 REQUEST_ID_RE = re.compile(r'^[A-Za-z0-9_.:-]{1,80}$')
@@ -31,6 +31,75 @@ class ErrorResponse:
 
     def body(self) -> bytes:
         return json.dumps({'code': self.code, 'message': self.message}, ensure_ascii=False).encode('utf-8')
+
+
+@dataclass(frozen=True)
+class PolicyResult:
+    allowed: bool
+    error_code: str = ''
+    error_message: str = ''
+    http_status: int = 200
+    context: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def allow(cls, **context):
+        return cls(True, context=context)
+
+    @classmethod
+    def deny(cls, code: str, message: str, status: int, **context):
+        return cls(False, code, message, status, context)
+
+
+class IPRiskPolicy:
+    def __init__(self, checker: Callable[[str], tuple[bool, str]]):
+        self.checker = checker
+
+    def evaluate(self, req: 'NormalizedRequest', ctx: dict[str, Any] | None = None) -> PolicyResult:
+        ok, rule = self.checker(req.client_ip)
+        if not ok:
+            return PolicyResult.deny('IP_BLOCKED', f'Client IP blocked: {rule}', 403, rule=rule)
+        return PolicyResult.allow()
+
+
+class AuthPolicy:
+    def __init__(self, key_verifier: Callable[[str], Mapping[str, Any]], portal_user_loader: Callable[[int], Any]):
+        self.key_verifier = key_verifier
+        self.portal_user_loader = portal_user_loader
+
+    def evaluate(self, req: 'NormalizedRequest', ctx: dict[str, Any] | None = None) -> PolicyResult:
+        if not req.api_key:
+            return PolicyResult.deny('INVALID_API_KEY', 'Missing API key', 401)
+        try:
+            info = self.key_verifier(req.api_key)
+        except Exception:
+            return PolicyResult.deny('INVALID_API_KEY', 'Invalid API key', 401)
+        if not info.get('ok'):
+            code = str(info.get('code') or 'INVALID_API_KEY')
+            return PolicyResult.deny(code, str(info.get('message') or 'Invalid API key'), 401)
+        sub2_uid = int(info['user_id'])
+        key_id = int(info['key_id'])
+        portal_user = self.portal_user_loader(sub2_uid)
+        if not portal_user:
+            return PolicyResult.deny('ACCOUNT_DISABLED', 'Account disabled', 403, sub2_uid=sub2_uid, key_id=key_id)
+        return PolicyResult.allow(sub2_uid=sub2_uid, key_id=key_id, portal_user=portal_user)
+
+
+class ModelAllowPolicy:
+    def __init__(self, allowed_models_loader: Callable[[int], set[str]]):
+        self.allowed_models_loader = allowed_models_loader
+
+    def evaluate(self, req: 'NormalizedRequest', ctx: dict[str, Any] | None = None) -> PolicyResult:
+        ctx = ctx or {}
+        model = req.model
+        if not model:
+            return PolicyResult.allow()
+        portal_user = ctx.get('portal_user')
+        if not portal_user:
+            return PolicyResult.deny('ACCOUNT_DISABLED', 'Account disabled', 403)
+        allowed = self.allowed_models_loader(int(portal_user['id']))
+        if model not in allowed:
+            return PolicyResult.deny('MODEL_NOT_ALLOWED', f'Model not allowed: {model}', 403, model=model)
+        return PolicyResult.allow(model=model)
 
 
 @dataclass(frozen=True)

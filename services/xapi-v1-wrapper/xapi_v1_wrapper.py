@@ -23,10 +23,11 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gateway_core import (
-        HOP_BY_HOP_HEADERS, REQUEST_ID_HEADER, build_model_list_payload,
-        encode_chunk, make_request_id_from_headers, proxy_request_headers,
-        should_chunk_downstream, should_forward_response_header,
-    )
+    AuthPolicy, IPRiskPolicy, ModelAllowPolicy, NormalizedRequest,
+    REQUEST_ID_HEADER, build_model_list_payload, encode_chunk,
+    extract_bearer_token, make_request_id_from_headers, model_from_json_body,
+    proxy_request_headers, should_chunk_downstream, should_forward_response_header,
+)
 
 HOST = os.environ.get('XAPI_WRAPPER_HOST', '127.0.0.1')
 PORT = int(os.environ.get('XAPI_WRAPPER_PORT', '18182'))
@@ -217,47 +218,50 @@ class Handler(BaseHTTPRequestHandler):
         key_id = None
         cip = client_ip(self)
 
-        ok, rule = risk_allowed(cip)
-        if not ok:
-            log_access(ip=cip, method=self.command, path=self.path, status=403, error_code='IP_BLOCKED', latency_ms=self.elapsed(started))
-            return json_error(self, 'IP_BLOCKED', f'Client IP blocked: {rule}', 403)
+        req = NormalizedRequest(
+            method=self.command,
+            path=self.path,
+            headers=dict(self.headers.items()),
+            body=b'',
+            client_ip=cip,
+            request_id=self.request_id,
+            api_key=extract_bearer_token(dict(self.headers.items())),
+        )
 
-        auth = self.headers.get('Authorization', '')
-        if not auth.lower().startswith('bearer '):
-            log_access(ip=cip, method=self.command, path=self.path, status=401, error_code='INVALID_API_KEY', latency_ms=self.elapsed(started))
-            return json_error(self, 'INVALID_API_KEY', 'Missing API key', 401)
-        api_key = auth.split(None, 1)[1].strip()
+        risk_result = IPRiskPolicy(risk_allowed).evaluate(req)
+        if not risk_result.allowed:
+            log_access(ip=cip, method=self.command, path=self.path, status=risk_result.http_status, error_code=risk_result.error_code, latency_ms=self.elapsed(started))
+            return json_error(self, risk_result.error_code, risk_result.error_message, risk_result.http_status)
 
-        try:
-            info = post_json('/keys/verify', {'key': api_key})
-        except Exception:
-            log_access(ip=cip, method=self.command, path=self.path, status=401, error_code='INVALID_API_KEY', latency_ms=self.elapsed(started))
-            return json_error(self, 'INVALID_API_KEY', 'Invalid API key', 401)
-        if not info.get('ok'):
-            code = info.get('code', 'INVALID_API_KEY')
-            log_access(ip=cip, method=self.command, path=self.path, status=401, error_code=code, latency_ms=self.elapsed(started))
-            return json_error(self, code, info.get('message', 'Invalid API key'), 401)
+        auth_result = AuthPolicy(lambda key: post_json('/keys/verify', {'key': key}), portal_user_by_sub2).evaluate(req)
+        if not auth_result.allowed:
+            log_access(user_id=auth_result.context.get('sub2_uid'), key_id=auth_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=auth_result.http_status, error_code=auth_result.error_code, latency_ms=self.elapsed(started))
+            return json_error(self, auth_result.error_code, auth_result.error_message, auth_result.http_status)
 
-        sub2_uid = int(info['user_id'])
-        key_id = int(info['key_id'])
-        portal_user = portal_user_by_sub2(sub2_uid)
-        if not portal_user:
-            log_access(user_id=sub2_uid, key_id=key_id, ip=cip, method=self.command, path=self.path, status=403, error_code='ACCOUNT_DISABLED', latency_ms=self.elapsed(started))
-            return json_error(self, 'ACCOUNT_DISABLED', 'Account disabled', 403)
+        sub2_uid = int(auth_result.context['sub2_uid'])
+        key_id = int(auth_result.context['key_id'])
+        portal_user = auth_result.context['portal_user']
 
         if self.command == 'GET' and self.path.split('?', 1)[0].rstrip('/') == '/v1/models':
             return self.respond_models(portal_user, key_id, cip, started)
 
         body = self.read_body()
-        if body and self.headers.get('Content-Type', '').split(';')[0].lower() == 'application/json':
-            try:
-                data = json.loads(body.decode('utf-8') or '{}')
-                model = data.get('model') or ''
-                if model and model not in allowed_models(portal_user['id']):
-                    log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=403, error_code='MODEL_NOT_ALLOWED', latency_ms=self.elapsed(started))
-                    return json_error(self, 'MODEL_NOT_ALLOWED', f'Model not allowed: {model}', 403)
-            except json.JSONDecodeError:
-                pass
+        model = model_from_json_body(body, self.headers.get('Content-Type', ''))
+        if model:
+            model_req = NormalizedRequest(
+                method=self.command,
+                path=self.path,
+                headers=dict(self.headers.items()),
+                body=body,
+                client_ip=cip,
+                request_id=self.request_id,
+                api_key=req.api_key,
+                model=model,
+            )
+            model_result = ModelAllowPolicy(allowed_models).evaluate(model_req, {'portal_user': portal_user})
+            if not model_result.allowed:
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started))
+                return json_error(self, model_result.error_code, model_result.error_message, model_result.http_status)
 
         upstream_url = UPSTREAM + self.path
         reachable, reason = upstream_reachable(UPSTREAM)
