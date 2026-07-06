@@ -11,7 +11,7 @@ import json
 import re
 import secrets
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Any
+from typing import Callable, Mapping, Any, Protocol
 
 REQUEST_ID_HEADER = 'X-Request-Id'
 REQUEST_ID_RE = re.compile(r'^[A-Za-z0-9_.:-]{1,80}$')
@@ -175,6 +175,15 @@ def build_access_log_record(
     )
 
 
+class AccessLogWriter(Protocol):
+    def write(self, record: AccessLogRecord, created_at: int) -> None:
+        ...
+
+
+def write_access_log_record(writer: AccessLogWriter, record: AccessLogRecord, created_at: int) -> None:
+    writer.write(record, created_at)
+
+
 def header_get(headers: Mapping[str, str], name: str, default: str = '') -> str:
     lname = name.lower()
     for key, value in headers.items():
@@ -252,6 +261,14 @@ def proxy_request_headers(headers: Mapping[str, str], request_id: str) -> dict[s
 
 def should_forward_response_header(name: str) -> bool:
     return name.lower() not in HOP_BY_HOP_HEADERS
+
+
+def upstream_http_error_code(http_status: int) -> str:
+    if http_status == 429:
+        return 'UPSTREAM_RATE_LIMIT'
+    if http_status in (502, 503, 504):
+        return 'UPSTREAM_UNAVAILABLE'
+    return 'UPSTREAM_HTTP_ERROR'
 
 
 def should_chunk_downstream(content_length, method: str) -> bool:

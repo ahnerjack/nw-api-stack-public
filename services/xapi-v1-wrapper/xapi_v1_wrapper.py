@@ -26,7 +26,7 @@ from gateway_core import (
     AuthPolicy, IPRiskPolicy, ModelAllowPolicy, PolicyPipeline,
     REQUEST_ID_HEADER, build_access_log_record, build_model_list_payload, encode_chunk,
     make_request_id_from_headers, normalize_request, proxy_request_headers,
-    should_chunk_downstream, should_forward_response_header,
+    should_chunk_downstream, should_forward_response_header, upstream_http_error_code,
 )
 
 HOST = os.environ.get('XAPI_WRAPPER_HOST', '127.0.0.1')
@@ -365,11 +365,7 @@ class Handler(BaseHTTPRequestHandler):
     def forward_http_error(self, exc, portal_user, key_id, cip, model, started):
         payload = exc.read()
         status = exc.code
-        error_code = 'UPSTREAM_HTTP_ERROR'
-        if status == 429:
-            error_code = 'UPSTREAM_RATE_LIMIT'
-        elif status in (502, 503, 504):
-            error_code = 'UPSTREAM_UNAVAILABLE'
+        error_code = upstream_http_error_code(status)
         self.send_response(status)
         for key, value in exc.headers.items():
             if should_forward_response_header(key):

@@ -217,6 +217,31 @@ class GatewayCoreTests(unittest.TestCase):
         self.assertEqual(rec.status, 0)
         self.assertEqual(rec.latency_ms, 0)
 
+    def test_access_log_writer_protocol(self):
+        calls = []
+
+        class Writer:
+            def write(self, record, created_at):
+                calls.append((record, created_at))
+
+        rec = core.build_access_log_record(status=401, error_code='INVALID_API_KEY', request_id='req_writer')
+        core.write_access_log_record(Writer(), rec, 123)
+        self.assertEqual(calls, [(rec, 123)])
+
+    def test_upstream_http_error_code_mapping(self):
+        cases = {
+            429: 'UPSTREAM_RATE_LIMIT',
+            502: 'UPSTREAM_UNAVAILABLE',
+            503: 'UPSTREAM_UNAVAILABLE',
+            504: 'UPSTREAM_UNAVAILABLE',
+            400: 'UPSTREAM_HTTP_ERROR',
+            403: 'UPSTREAM_HTTP_ERROR',
+            500: 'UPSTREAM_HTTP_ERROR',
+        }
+        for status, code in cases.items():
+            with self.subTest(status=status):
+                self.assertEqual(core.upstream_http_error_code(status), code)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
