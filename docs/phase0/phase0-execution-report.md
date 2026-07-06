@@ -132,7 +132,7 @@ bash -n scripts/deploy-aliyun.sh scripts/deploy-sub2api-host.sh scripts/bootstra
 命令：
 
 ```bash
-python3 scripts/build-release-package.py --version phase0-test --dist /tmp/nwapi-phase0-dist
+python3 scripts/build-release-package.py --version V0.0.1-rc.1 --dist /tmp/nwapi-phase0-dist
 ```
 
 结果：通过。

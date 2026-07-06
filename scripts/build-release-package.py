@@ -63,8 +63,12 @@ def version_from_source() -> str:
 
 
 def validate_version(version: str) -> str:
-    if not re.fullmatch(r"[A-Za-z0-9._+-]+", version):
-        raise SystemExit(f"Unsupported version string: {version}")
+    pattern = r"V\d+\.\d+\.\d+(?:\.\d+)?(?:-rc\.\d+)?"
+    if not re.fullmatch(pattern, version):
+        raise SystemExit(
+            "Unsupported version string: "
+            f"{version}. Expected V0.0.X, V0.0.X.Y, or V0.0.X-rc.N"
+        )
     return version
 
 
