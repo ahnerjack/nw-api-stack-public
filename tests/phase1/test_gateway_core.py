@@ -183,6 +183,40 @@ class GatewayCoreTests(unittest.TestCase):
         self.assertEqual(req.model, '')
         self.assertTrue(req.request_id.startswith('req_') or req.request_id)
 
+    def test_access_log_record_defaults(self):
+        rec = core.build_access_log_record()
+        self.assertIsNone(rec.user_id)
+        self.assertIsNone(rec.key_id)
+        self.assertEqual(rec.ip, '')
+        self.assertEqual(rec.method, '')
+        self.assertEqual(rec.path, '')
+        self.assertEqual(rec.model, '')
+        self.assertEqual(rec.status, 0)
+        self.assertEqual(rec.error_code, '')
+        self.assertEqual(rec.latency_ms, 0)
+        self.assertEqual(rec.request_id, '')
+
+    def test_access_log_record_insert_values(self):
+        rec = core.build_access_log_record(
+            user_id=1, key_id=11, ip='127.0.0.1', method='POST',
+            path='/v1/chat/completions', model='gpt-5.5', status=200,
+            error_code='', latency_ms=12, request_id='req_test',
+        )
+        self.assertEqual(
+            rec.insert_values(123456),
+            (1, 11, '127.0.0.1', 'POST', '/v1/chat/completions', 'gpt-5.5', 200, '', 12, 123456, 'req_test'),
+        )
+
+    def test_access_log_record_normalizes_empty_values(self):
+        rec = core.build_access_log_record(ip=None, method=None, path=None, model=None, error_code=None, status=None, latency_ms=None)
+        self.assertEqual(rec.ip, '')
+        self.assertEqual(rec.method, '')
+        self.assertEqual(rec.path, '')
+        self.assertEqual(rec.model, '')
+        self.assertEqual(rec.error_code, '')
+        self.assertEqual(rec.status, 0)
+        self.assertEqual(rec.latency_ms, 0)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

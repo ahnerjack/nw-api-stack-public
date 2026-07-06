@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gateway_core import (
     AuthPolicy, IPRiskPolicy, ModelAllowPolicy, PolicyPipeline,
-    REQUEST_ID_HEADER, build_model_list_payload, encode_chunk,
+    REQUEST_ID_HEADER, build_access_log_record, build_model_list_payload, encode_chunk,
     make_request_id_from_headers, normalize_request, proxy_request_headers,
     should_chunk_downstream, should_forward_response_header,
 )
@@ -134,6 +134,11 @@ def risk_allowed(ip):
 
 
 def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', status=0, error_code='', latency_ms=0, request_id=''):
+    record = build_access_log_record(
+        user_id=user_id, key_id=key_id, ip=ip, method=method, path=path,
+        model=model, status=status, error_code=error_code,
+        latency_ms=latency_ms, request_id=request_id or current_request_id(),
+    )
     con = None
     try:
         con = sqlite3.connect(PORTAL_DB)
@@ -150,11 +155,10 @@ def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', s
                 raise
         con.execute('CREATE INDEX IF NOT EXISTS idx_api_access_logs_request_id ON api_access_logs(request_id)')
         con.execute('DELETE FROM api_access_logs WHERE created_at < ?', (int(time.time()) - 90 * 86400,))
-        rid = request_id or current_request_id()
         con.execute(
             'INSERT INTO api_access_logs(user_id,key_id,ip,method,path,model,status,error_code,latency_ms,created_at,request_id) '
             'VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-            (user_id, key_id, ip, method, path, model, status, error_code, latency_ms, int(time.time()), rid),
+            record.insert_values(int(time.time())),
         )
         con.commit()
     except Exception:

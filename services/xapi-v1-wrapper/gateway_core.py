@@ -136,6 +136,45 @@ class NormalizedRequest:
     model: str = ''
 
 
+@dataclass(frozen=True)
+class AccessLogRecord:
+    user_id: int | None = None
+    key_id: int | None = None
+    ip: str = ''
+    method: str = ''
+    path: str = ''
+    model: str = ''
+    status: int = 0
+    error_code: str = ''
+    latency_ms: int = 0
+    request_id: str = ''
+
+    def insert_values(self, created_at: int):
+        return (
+            self.user_id, self.key_id, self.ip, self.method, self.path,
+            self.model, self.status, self.error_code, self.latency_ms,
+            created_at, self.request_id,
+        )
+
+
+def build_access_log_record(
+    user_id=None, key_id=None, ip='', method='', path='', model='',
+    status=0, error_code='', latency_ms=0, request_id='',
+) -> AccessLogRecord:
+    return AccessLogRecord(
+        user_id=user_id,
+        key_id=key_id,
+        ip=ip or '',
+        method=method or '',
+        path=path or '',
+        model=model or '',
+        status=int(status or 0),
+        error_code=error_code or '',
+        latency_ms=int(latency_ms or 0),
+        request_id=request_id or '',
+    )
+
+
 def header_get(headers: Mapping[str, str], name: str, default: str = '') -> str:
     lname = name.lower()
     for key, value in headers.items():
