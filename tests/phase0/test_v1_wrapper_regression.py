@@ -217,6 +217,12 @@ INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
         self.assertEqual(status, 200)
         self.assertEqual(raw, b'')
 
+    def test_head_models_local(self):
+        status, headers, raw = request(self.wrapper_server.url, 'HEAD', '/v1/models')
+        self.assertEqual(status, 200)
+        self.assertEqual(raw, b'')
+        self.assertIn('Content-Length', headers)
+
     def test_options(self):
         status, headers, raw = request(self.wrapper_server.url, 'OPTIONS', '/v1/chat/completions', key=None)
         self.assertEqual(status, 204)

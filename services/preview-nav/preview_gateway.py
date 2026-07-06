@@ -11,6 +11,15 @@ PREVIEW_HOST = os.environ.get('NW_API_PREVIEW_HOST', '0.0.0.0')
 PORTAL_BASE = os.environ.get('NW_API_PREVIEW_PORTAL_BASE', 'http://127.0.0.1:19080').rstrip('/')
 WRAPPER_BASE = os.environ.get('NW_API_PREVIEW_WRAPPER_BASE', 'http://127.0.0.1:19082').rstrip('/')
 BRAND = os.environ.get('NW_API_PREVIEW_BRAND', 'NW-API 阶段0预览')
+REQUEST_QUEUE_SIZE = int(os.environ.get('NW_API_PREVIEW_REQUEST_QUEUE_SIZE', '128'))
+PROXY_TIMEOUT = float(os.environ.get('NW_API_PREVIEW_PROXY_TIMEOUT_SECONDS', '180'))
+STREAM_CHUNK_SIZE = int(os.environ.get('NW_API_PREVIEW_STREAM_CHUNK_SIZE', '8192'))
+
+
+class TunedThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = REQUEST_QUEUE_SIZE
 
 
 def upstream_for(path):
@@ -107,7 +116,7 @@ h1{{font-size:30px;margin:0 0 10px}}p{{color:#94a3b8;line-height:1.7}}a.btn{{dis
         path = upstream_path + (('?' + parsed.query) if parsed.query else '')
         body_len = int(self.headers.get('Content-Length', '0') or '0')
         body = self.rfile.read(body_len) if body_len else None
-        conn = http.client.HTTPConnection(target.hostname, target.port or 80, timeout=180)
+        conn = http.client.HTTPConnection(target.hostname, target.port or 80, timeout=PROXY_TIMEOUT)
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ('host', 'connection', 'content-length')}
         headers['Host'] = target.netloc
         if body is not None:
@@ -115,6 +124,8 @@ h1{{font-size:30px;margin:0 0 10px}}p{{color:#94a3b8;line-height:1.7}}a.btn{{dis
         try:
             conn.request(self.command, path, body=body, headers=headers)
             resp = conn.getresponse()
+            if base == WRAPPER_BASE:
+                return self.stream_proxy_response(resp, head_only)
             data = b'' if head_only else resp.read()
             content_type = resp.getheader('Content-Type', '')
             if base == PORTAL_BASE and not head_only:
@@ -144,9 +155,42 @@ h1{{font-size:30px;margin:0 0 10px}}p{{color:#94a3b8;line-height:1.7}}a.btn{{dis
         finally:
             conn.close()
 
-
-ThreadingHTTPServer.daemon_threads = True
-
+    def stream_proxy_response(self, resp, head_only=False):
+        self.send_response(resp.status, resp.reason)
+        content_length = resp.getheader('Content-Length')
+        chunked_upstream = 'chunked' in (resp.getheader('Transfer-Encoding') or '').lower()
+        for k, v in resp.getheaders():
+            lk = k.lower()
+            if lk in ('connection', 'transfer-encoding', 'content-encoding'):
+                continue
+            if lk == 'content-length' and chunked_upstream:
+                continue
+            self.send_header(k, v)
+        if not content_length and not head_only:
+            self.send_header('Transfer-Encoding', 'chunked')
+        self.end_headers()
+        if head_only:
+            return
+        try:
+            while True:
+                if hasattr(resp, 'read1'):
+                    chunk = resp.read1(STREAM_CHUNK_SIZE)
+                else:
+                    chunk = resp.read(1)
+                if not chunk:
+                    break
+                if content_length:
+                    self.wfile.write(chunk)
+                else:
+                    self.wfile.write(f'{len(chunk):X}\r\n'.encode('ascii'))
+                    self.wfile.write(chunk)
+                    self.wfile.write(b'\r\n')
+                self.wfile.flush()
+            if not content_length:
+                self.wfile.write(b'0\r\n\r\n')
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            self.close_connection = True
 
 if __name__ == '__main__':
-    ThreadingHTTPServer((PREVIEW_HOST, PREVIEW_PORT), Handler).serve_forever()
+    TunedThreadingHTTPServer((PREVIEW_HOST, PREVIEW_PORT), Handler).serve_forever()

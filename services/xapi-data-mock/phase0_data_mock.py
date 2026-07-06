@@ -10,6 +10,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HOST = os.environ.get('XAPI_DATA_HOST', '127.0.0.1')
 PORT = int(os.environ.get('XAPI_DATA_PORT', '19081'))
 DB = os.environ.get('XAPI_DATA_MOCK_DB', '/opt/nw-api-phase0-preview/state/xapi_data_mock.db')
+REQUEST_QUEUE_SIZE = int(os.environ.get('XAPI_DATA_MOCK_REQUEST_QUEUE_SIZE', '128'))
+
+
+class TunedThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = REQUEST_QUEUE_SIZE
 DEFAULT_EMAIL = os.environ.get('XAPI_MOCK_ADMIN_EMAIL', 'root')
 DEFAULT_PASSWORD = os.environ.get('XAPI_MOCK_ADMIN_PASS', 'password')
 
@@ -182,4 +189,4 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     init_db()
-    ThreadingHTTPServer((HOST, PORT), H).serve_forever()
+    TunedThreadingHTTPServer((HOST, PORT), H).serve_forever()

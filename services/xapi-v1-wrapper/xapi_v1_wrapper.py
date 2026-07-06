@@ -40,8 +40,50 @@ UPSTREAM_TIMEOUT = float(os.environ.get('XAPI_UPSTREAM_TIMEOUT_SECONDS', '540'))
 UPSTREAM_CONNECT_TIMEOUT = float(os.environ.get('XAPI_UPSTREAM_CONNECT_TIMEOUT_SECONDS', '10'))
 STREAM_IDLE_TIMEOUT = float(os.environ.get('XAPI_STREAM_IDLE_TIMEOUT_SECONDS', '180'))
 STREAM_CHUNK_SIZE = int(os.environ.get('XAPI_STREAM_CHUNK_SIZE', '8192'))
+REQUEST_QUEUE_SIZE = int(os.environ.get('XAPI_WRAPPER_REQUEST_QUEUE_SIZE', '128'))
+LOG_ACCESS_ENABLED = os.environ.get('XAPI_WRAPPER_LOG_ACCESS', '1').lower() not in ('0', 'false', 'no', 'off')
+KEY_VERIFY_CACHE_TTL = float(os.environ.get('XAPI_KEY_VERIFY_CACHE_TTL_SECONDS', '0'))
+MOCK_CHAT_ENABLED = os.environ.get('XAPI_WRAPPER_MOCK_CHAT', '0').lower() in ('1', 'true', 'yes', 'on')
+
+
+class TunedThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = REQUEST_QUEUE_SIZE
 
 _REQUEST_CONTEXT = threading.local()
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY = False
+_KEY_VERIFY_LOCK = threading.Lock()
+_KEY_VERIFY_CACHE = {}
+
+
+def init_access_log_schema():
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        con = sqlite3.connect(PORTAL_DB, timeout=5)
+        try:
+            con.execute(
+                'CREATE TABLE IF NOT EXISTS api_access_logs('
+                'id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,key_id INTEGER,'
+                'ip TEXT,method TEXT,path TEXT,model TEXT,status INTEGER,'
+                'error_code TEXT,latency_ms INTEGER,created_at INTEGER)'
+            )
+            try:
+                con.execute('ALTER TABLE api_access_logs ADD COLUMN request_id TEXT')
+            except sqlite3.OperationalError as exc:
+                if 'duplicate column' not in str(exc).lower():
+                    raise
+            con.execute('CREATE INDEX IF NOT EXISTS idx_api_access_logs_request_id ON api_access_logs(request_id)')
+            con.execute('DELETE FROM api_access_logs WHERE created_at < ?', (int(time.time()) - 90 * 86400,))
+            con.commit()
+            _SCHEMA_READY = True
+        finally:
+            con.close()
 
 
 def make_request_id(handler=None):
@@ -71,6 +113,24 @@ def post_json(path, payload):
     )
     with urllib.request.urlopen(req, timeout=DATA_TIMEOUT) as resp:
         return json.loads(resp.read().decode('utf-8'))
+
+
+def verify_key(api_key):
+    if KEY_VERIFY_CACHE_TTL <= 0:
+        return post_json('/keys/verify', {'key': api_key})
+    now = time.monotonic()
+    with _KEY_VERIFY_LOCK:
+        cached = _KEY_VERIFY_CACHE.get(api_key)
+        if cached and cached[0] > now:
+            return dict(cached[1])
+    info = post_json('/keys/verify', {'key': api_key})
+    with _KEY_VERIFY_LOCK:
+        _KEY_VERIFY_CACHE[api_key] = (now + KEY_VERIFY_CACHE_TTL, dict(info))
+        if len(_KEY_VERIFY_CACHE) > 2048:
+            expired = [k for k, (until, _) in _KEY_VERIFY_CACHE.items() if until <= now]
+            for k in expired[:1024]:
+                _KEY_VERIFY_CACHE.pop(k, None)
+    return info
 
 
 def allowed_models(portal_user_id):
@@ -134,6 +194,8 @@ def risk_allowed(ip):
 
 
 def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', status=0, error_code='', latency_ms=0, request_id=''):
+    if not LOG_ACCESS_ENABLED:
+        return
     record = build_access_log_record(
         user_id=user_id, key_id=key_id, ip=ip, method=method, path=path,
         model=model, status=status, error_code=error_code,
@@ -141,20 +203,8 @@ def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', s
     )
     con = None
     try:
-        con = sqlite3.connect(PORTAL_DB)
-        con.execute(
-            'CREATE TABLE IF NOT EXISTS api_access_logs('
-            'id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,key_id INTEGER,'
-            'ip TEXT,method TEXT,path TEXT,model TEXT,status INTEGER,'
-            'error_code TEXT,latency_ms INTEGER,created_at INTEGER)'
-        )
-        try:
-            con.execute('ALTER TABLE api_access_logs ADD COLUMN request_id TEXT')
-        except sqlite3.OperationalError as exc:
-            if 'duplicate column' not in str(exc).lower():
-                raise
-        con.execute('CREATE INDEX IF NOT EXISTS idx_api_access_logs_request_id ON api_access_logs(request_id)')
-        con.execute('DELETE FROM api_access_logs WHERE created_at < ?', (int(time.time()) - 90 * 86400,))
+        init_access_log_schema()
+        con = sqlite3.connect(PORTAL_DB, timeout=5)
         con.execute(
             'INSERT INTO api_access_logs(user_id,key_id,ip,method,path,model,status,error_code,latency_ms,created_at,request_id) '
             'VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -235,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
 
         policy_result = PolicyPipeline([
             IPRiskPolicy(risk_allowed),
-            AuthPolicy(lambda key: post_json('/keys/verify', {'key': key}), portal_user_by_sub2),
+            AuthPolicy(verify_key, portal_user_by_sub2),
         ]).run(req)
         if not policy_result.allowed:
             log_access(user_id=policy_result.context.get('sub2_uid'), key_id=policy_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=policy_result.http_status, error_code=policy_result.error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
@@ -245,7 +295,7 @@ class Handler(BaseHTTPRequestHandler):
         key_id = int(policy_result.context['key_id'])
         portal_user = policy_result.context['portal_user']
 
-        if self.command == 'GET' and self.path.split('?', 1)[0].rstrip('/') == '/v1/models':
+        if self.command in ('GET', 'HEAD') and self.path.split('?', 1)[0].rstrip('/') == '/v1/models':
             return self.respond_models(portal_user, key_id, cip, started)
 
         body = self.read_body()
@@ -257,12 +307,10 @@ class Handler(BaseHTTPRequestHandler):
                 log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
                 return json_error(self, model_result.error_code, model_result.error_message, model_result.http_status)
 
-        upstream_url = UPSTREAM + self.path
-        reachable, reason = upstream_reachable(UPSTREAM)
-        if not reachable:
-            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=502, error_code='UPSTREAM_TUNNEL_DOWN', latency_ms=self.elapsed(started), request_id=self.request_id)
-            return json_error(self, 'UPSTREAM_TUNNEL_DOWN', f'Upstream tunnel unavailable: {reason}', 502)
+        if MOCK_CHAT_ENABLED and self.path.split('?', 1)[0] == '/v1/chat/completions':
+            return self.respond_mock_chat(body, portal_user, key_id, cip, model, started)
 
+        upstream_url = UPSTREAM + self.path
         try:
             self.forward_to_upstream(upstream_url, body, portal_user, key_id, cip, model, started)
         except socket.timeout:
@@ -285,9 +333,47 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
-        self.wfile.flush()
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+            self.wfile.flush()
         log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, status=200, latency_ms=self.elapsed(started), request_id=self.request_id)
+
+    def respond_mock_chat(self, body, portal_user, key_id, cip, model, started):
+        try:
+            payload = json.loads(body.decode('utf-8') or '{}')
+        except Exception:
+            payload = {}
+        if payload.get('stream'):
+            chunks = [
+                b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+                b'data: [DONE]\n\n',
+            ]
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('X-Accel-Buffering', 'no')
+            self.send_header('Transfer-Encoding', 'chunked')
+            self.end_headers()
+            for chunk in chunks:
+                self.wfile.write(encode_chunk(chunk))
+                self.wfile.flush()
+            self.wfile.write(b'0\r\n\r\n')
+            self.wfile.flush()
+        else:
+            resp = {
+                'id': 'chatcmpl-preview-mock',
+                'object': 'chat.completion',
+                'model': model or payload.get('model') or '',
+                'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': 'ok'}, 'finish_reason': 'stop'}],
+            }
+            data = json.dumps(resp, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            self.wfile.flush()
+        log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=200, latency_ms=self.elapsed(started), request_id=self.request_id)
 
     def forward_to_upstream(self, upstream_url, body, portal_user, key_id, cip, model, started):
         headers = proxy_request_headers(dict(self.headers.items()), getattr(self, 'request_id', '') or current_request_id())
@@ -382,4 +468,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    if LOG_ACCESS_ENABLED:
+        init_access_log_schema()
+    TunedThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
