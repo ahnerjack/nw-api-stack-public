@@ -170,6 +170,19 @@ class GatewayCoreTests(unittest.TestCase):
         self.assertEqual(result.context['existing'], 'seed')
         self.assertEqual(result.context['extra'], 'seed-ok')
 
+    def test_normalize_request_without_body_keeps_auth_and_empty_model(self):
+        req = core.normalize_request(
+            'POST',
+            '/v1/chat/completions',
+            {'Authorization': 'Bearer sk-test', 'Content-Type': 'application/json', 'X-Forwarded-For': '1.2.3.4'},
+            b'',
+            '127.0.0.1',
+        )
+        self.assertEqual(req.api_key, 'sk-test')
+        self.assertEqual(req.client_ip, '1.2.3.4')
+        self.assertEqual(req.model, '')
+        self.assertTrue(req.request_id.startswith('req_') or req.request_id)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

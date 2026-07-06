@@ -132,6 +132,7 @@ class NormalizedRequest:
     client_ip: str
     request_id: str
     api_key: str = ''
+    # Valid only when body has already been read and supplied to normalize_request().
     model: str = ''
 
 

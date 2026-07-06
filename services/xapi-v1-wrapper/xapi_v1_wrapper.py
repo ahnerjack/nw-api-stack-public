@@ -23,10 +23,10 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gateway_core import (
-    AuthPolicy, IPRiskPolicy, ModelAllowPolicy, NormalizedRequest, PolicyPipeline,
+    AuthPolicy, IPRiskPolicy, ModelAllowPolicy, PolicyPipeline,
     REQUEST_ID_HEADER, build_model_list_payload, encode_chunk,
-    extract_bearer_token, make_request_id_from_headers, model_from_json_body,
-    proxy_request_headers, should_chunk_downstream, should_forward_response_header,
+    make_request_id_from_headers, normalize_request, proxy_request_headers,
+    should_chunk_downstream, should_forward_response_header,
 )
 
 HOST = os.environ.get('XAPI_WRAPPER_HOST', '127.0.0.1')
@@ -218,15 +218,16 @@ class Handler(BaseHTTPRequestHandler):
         key_id = None
         cip = client_ip(self)
 
-        req = NormalizedRequest(
+        req = normalize_request(
             method=self.command,
             path=self.path,
-            headers=dict(self.headers.items()),
+            headers=self.headers,
             body=b'',
-            client_ip=cip,
-            request_id=self.request_id,
-            api_key=extract_bearer_token(dict(self.headers.items())),
+            fallback_ip=self.client_address[0],
         )
+        cip = req.client_ip
+        self.request_id = req.request_id
+        _REQUEST_CONTEXT.request_id = self.request_id
 
         policy_result = PolicyPipeline([
             IPRiskPolicy(risk_allowed),
@@ -244,18 +245,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond_models(portal_user, key_id, cip, started)
 
         body = self.read_body()
-        model = model_from_json_body(body, self.headers.get('Content-Type', ''))
+        model_req = normalize_request(self.command, self.path, self.headers, body, self.client_address[0])
+        model = model_req.model
         if model:
-            model_req = NormalizedRequest(
-                method=self.command,
-                path=self.path,
-                headers=dict(self.headers.items()),
-                body=body,
-                client_ip=cip,
-                request_id=self.request_id,
-                api_key=req.api_key,
-                model=model,
-            )
             model_result = PolicyPipeline([ModelAllowPolicy(allowed_models)]).run(model_req, {'portal_user': portal_user})
             if not model_result.allowed:
                 log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started))

@@ -234,6 +234,76 @@ INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
         self.assertGreater(n, 0)
         self.assertEqual(rid[0], 'req_manual_test')
 
+    def test_ip_blocked_access_log(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            'INSERT INTO risk_rules(kind,pattern,action,status) VALUES(?,?,?,?)',
+            ('ip', '1.2.3.4', 'block', 'active'),
+        )
+        con.commit(); con.close()
+        try:
+            status, headers, raw = request(
+                self.wrapper_server.url,
+                'GET',
+                '/v1/models',
+                headers={'X-Forwarded-For': '1.2.3.4', 'X-Request-Id': 'req_ip_block_test'},
+            )
+            self.assertEqual(status, 403, raw)
+            self.assertIn(b'IP_BLOCKED', raw)
+            con = sqlite3.connect(self.db_path)
+            row = con.execute(
+                "SELECT user_id,key_id,ip,status,error_code,request_id FROM api_access_logs WHERE request_id='req_ip_block_test' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            con.close()
+            self.assertIsNotNone(row)
+            self.assertIsNone(row[0])
+            self.assertIsNone(row[1])
+            self.assertEqual(row[2], '1.2.3.4')
+            self.assertEqual(row[3], 403)
+            self.assertEqual(row[4], 'IP_BLOCKED')
+            self.assertEqual(row[5], 'req_ip_block_test')
+        finally:
+            con = sqlite3.connect(self.db_path)
+            con.execute("DELETE FROM risk_rules WHERE pattern='1.2.3.4' AND action='block'")
+            con.commit(); con.close()
+
+    def test_ip_blocked_post_body_access_log(self):
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            'INSERT INTO risk_rules(kind,pattern,action,status) VALUES(?,?,?,?)',
+            ('ip', '5.6.7.8', 'block', 'active'),
+        )
+        con.commit(); con.close()
+        try:
+            status, headers, raw = request(
+                self.wrapper_server.url,
+                'POST',
+                '/v1/chat/completions',
+                {'model': 'gpt-5.5', 'messages': [{'role': 'user', 'content': 'blocked'}]},
+                headers={'X-Forwarded-For': '5.6.7.8', 'X-Request-Id': 'req_ip_block_post_test'},
+            )
+            self.assertEqual(status, 403, raw)
+            self.assertIn(b'IP_BLOCKED', raw)
+            con = sqlite3.connect(self.db_path)
+            row = con.execute(
+                "SELECT user_id,key_id,ip,method,path,model,status,error_code,request_id FROM api_access_logs WHERE request_id='req_ip_block_post_test' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            con.close()
+            self.assertIsNotNone(row)
+            self.assertIsNone(row[0])
+            self.assertIsNone(row[1])
+            self.assertEqual(row[2], '5.6.7.8')
+            self.assertEqual(row[3], 'POST')
+            self.assertEqual(row[4], '/v1/chat/completions')
+            self.assertEqual(row[5] or '', '')
+            self.assertEqual(row[6], 403)
+            self.assertEqual(row[7], 'IP_BLOCKED')
+            self.assertEqual(row[8], 'req_ip_block_post_test')
+        finally:
+            con = sqlite3.connect(self.db_path)
+            con.execute("DELETE FROM risk_rules WHERE pattern='5.6.7.8' AND action='block'")
+            con.commit(); con.close()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
