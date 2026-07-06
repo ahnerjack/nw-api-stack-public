@@ -315,11 +315,20 @@ def model_desc(m,note=''):
     }
     return mp.get(str(m), note or '通用模型。适合按需接入的文本处理、生成和自动化任务。')
 
+def normalize_pricing_item(it):
+    if isinstance(it, dict):
+        return it
+    if isinstance(it, (list, tuple)):
+        vals=list(it)+['']*8
+        return {'model':vals[0], 'unit':vals[1], 'input_price':vals[2], 'output_price':vals[3], 'cache_price':vals[4], 'image_price':vals[5], 'platform':vals[6], 'updated_at':vals[7]}
+    return {}
+
+
 def sync_model_prices():
     """Pull pricing from 后台服务 xapi-data and update portal DB. Best-effort, never breaks pages."""
     try:
         d=api_get('/pricing',0)
-        items=d.get('pricing') or []
+        items=[normalize_pricing_item(x) for x in (d.get('pricing') or [])]
         if not items: return {'ok':False,'count':0,'source':'empty'}
         con=db(); now=int(time.time()); count=0
         con.execute('CREATE TABLE IF NOT EXISTS model_price_sync(id INTEGER PRIMARY KEY CHECK(id=1), source TEXT, unit TEXT, synced_at INTEGER, upstream_updated_at TEXT, status TEXT, error TEXT)')
@@ -646,7 +655,15 @@ class H(BaseHTTPRequestHandler):
                 append_update_log(f'==== {time.strftime("%Y-%m-%dT%H:%M:%S%z")} spawn_failed admin={u["email"]} tag={tag} asset={asset} mode={UPDATE_MODE}')
                 msg='Release 缺少可部署资产，不能在线更新。' if UPDATE_MODE.startswith('release') else '没有找到可更新的目标版本。'
                 return self.sendh(shell('系统更新',f'<div class="card err">{esc(msg)}</div>',u,'admin_update'),500)
-            deploy_script='./scripts/deploy-preview-package.sh --force --runtime auto' if UPDATE_MODE.startswith('release') and os.path.exists(os.path.join(REPO_DIR,'scripts/deploy-preview-package.sh')) else './scripts/deploy-aliyun.sh'
+            if UPDATE_MODE.startswith('release'):
+                updater=os.path.join(REPO_DIR,'scripts/preview_release_update.py')
+                package_deploy=os.path.join(REPO_DIR,'scripts/deploy-preview-package.sh')
+                if not os.path.exists(updater) or not os.path.exists(package_deploy):
+                    append_update_log(f'==== {time.strftime("%Y-%m-%dT%H:%M:%S%z")} spawn_failed missing release updater/deployer')
+                    return self.sendh(shell('系统更新','<div class="card err">Release 更新器或包部署脚本缺失，已停止，避免误用源码部署。</div>',u,'admin_update'),500)
+                deploy_script='./scripts/deploy-preview-package.sh --force --runtime auto'
+            else:
+                deploy_script='./scripts/deploy-aliyun.sh'
             repo_q=shlex.quote(REPO_DIR); log_q=shlex.quote(UPDATE_LOG); lock_q=shlex.quote(UPDATE_LOCK); tag_q=shlex.quote(tag); asset_q=shlex.quote(asset); dest_q=shlex.quote('/tmp/nw-api-release-updates')
             if UPDATE_MODE.startswith('release'):
                 cmd='cd '+repo_q+' && python3 scripts/preview_release_update.py --repo '+shlex.quote(st.get('asset_repo') or UPDATE_ASSET_REPO)+' --tag '+tag_q+' --asset '+asset_q+' --checksum-asset checksums.txt --dest '+dest_q+' --deploy-command "sudo '+deploy_script+' {asset}" --run-deploy --print-manifest'
@@ -1010,7 +1027,8 @@ class H(BaseHTTPRequestHandler):
         filters=f'<div class="card"><form method="get" class="actions"><button class="btn btn2" name="preset" value="today">今日实时</button><input name="start" type="date" value="{esc(start)}"><input name="end" type="date" value="{esc(end)}"><input name="model" placeholder="筛选模型" value="{esc(model_filter)}"><select name="view"><option value="all" {"selected" if view=="all" else ""}>全部</option><option value="daily" {"selected" if view=="daily" else ""}>按日</option><option value="model" {"selected" if view=="model" else ""}>按模型</option></select><button class="btn">查询</button><a class="btn btn2" href="{action}">导出 CSV</a></form></div>'
         daily_card=f'<div class="card"><h2>按日统计</h2><table><tr><th>日期</th><th>消费</th><th>请求</th><th>M Token</th><th>图片</th></tr>{daily}</table></div>' if view in ('all','daily') else ''
         model_card=f'<div class="card"><h2>模型统计</h2><table><tr><th>模型</th><th>消费</th><th>请求</th><th>M Token</th></tr>{models}</table></div>' if view in ('all','model') else ''
-        self.sendh(shell('用量统计',filters+cards+daily_card+model_card,u,'usage'))
+        body=filters+cards+f'<div class="card"><div class="actions"><a class="btn btn2" href="/export.csv?type=usage&start={urllib.parse.quote(start)}&end={urllib.parse.quote(end)}&model={urllib.parse.quote(model_filter)}">导出汇总 CSV</a><a class="btn btn2" href="/export.csv?type=usage_ledger&start={urllib.parse.quote(start)}&end={urllib.parse.quote(end)}">导出明细流水 CSV</a></div></div>'+daily_card+model_card
+        self.sendh(shell('用量统计',body,u,'usage'))
     def billing(self,u):
         d=api_get('/summary',u['sub2_user_id']); su=d.get('user') or ['','','','','','0','0']; st=d.get('stats') or ['0','0','0','0','0']
         qs=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query); status=qs.get('status',[''])[0].strip(); bstart=qs.get('start',[''])[0].strip(); bend=qs.get('end',[''])[0].strip()
@@ -1285,6 +1303,12 @@ console.log(res.choices[0].message.content);</pre></div>
             for r in d.get('models',[]):
                 if not model_filter or model_filter.lower() in str(r[0]).lower(): w.writerow(['model',r[0],r[1],r[2],r[3],''])
             con.close(); return self.sendcsv('usage.csv',out.getvalue())
+        if typ=='usage_ledger':
+            today=time.strftime('%Y-%m-%d'); start=qs.get('start',[today])[0] or today; end=qs.get('end',[today])[0] or today
+            d=api_get('/usage-ledger?start='+urllib.parse.quote(start)+'&end='+urllib.parse.quote(end), u['sub2_user_id'])
+            w.writerow(['id','time','model','input_tokens','cache_tokens','output_tokens','total_cost','actual_cost','request_id'])
+            for r in d.get('ledger') or []: w.writerow(r)
+            con.close(); return self.sendcsv('usage-ledger.csv',out.getvalue())
         if typ=='billing-user':
             w.writerow(['created_at','direction','amount','note'])
             for r in con.execute('SELECT amount,note,created_at FROM billing_logs WHERE user_id=? ORDER BY id DESC',(u['id'],)):
@@ -1387,7 +1411,10 @@ console.log(res.choices[0].message.content);</pre></div>
             return self.sendh(release_version_menu(APP_VERSION),403)
         qs=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         force=qs.get('force',['0'])[0].lower() in ('1','true','yes','on')
-        st=update_state(force) if force else (UPDATE_CACHE.get('data') if UPDATE_CACHE.get('data',{}).get('ok') else git_update_state_local())
+        if UPDATE_MODE.startswith('release'):
+            st=update_state(force)
+        else:
+            st=update_state(force) if force else (UPDATE_CACHE.get('data') if UPDATE_CACHE.get('data',{}).get('ok') else git_update_state_local())
         if not st:
             st={}
         release_url=st.get('release_url') or ('https://github.com/ahnerjack/nw-api-stack-public/releases/tag/'+APP_VERSION)

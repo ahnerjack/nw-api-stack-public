@@ -241,6 +241,18 @@ def normalize_request(method: str, path: str, headers: Mapping[str, str], body: 
     )
 
 
+def path_without_query(path: str) -> str:
+    return str(path or '').split('?', 1)[0]
+
+
+def is_models_request(method: str, path: str) -> bool:
+    return str(method or '').upper() in ('GET', 'HEAD') and path_without_query(path).rstrip('/') == '/v1/models'
+
+
+def build_upstream_url(upstream_base: str, request_path: str) -> str:
+    return str(upstream_base or '').rstrip('/') + str(request_path or '')
+
+
 def build_model_list_payload(models) -> bytes:
     payload = {
         'object': 'list',

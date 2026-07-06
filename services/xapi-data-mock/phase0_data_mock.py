@@ -128,6 +128,8 @@ class H(BaseHTTPRequestHandler):
                 return self.sendj({'total': ['0', '0', '0', '0'], 'daily': [], 'models': []})
             if path == '/xapi-data/models':
                 return self.sendj({'models': [['gpt-5.5'], ['gpt-5.4'], ['gpt-5.4-mini'], ['gpt-image-2']]})
+            if path == '/xapi-data/usage-ledger':
+                return self.sendj({'source': 'phase0-mock', 'currency': 'backend_unit', 'ledger': []})
             if path == '/xapi-data/pricing':
                 return self.sendj({'pricing': [
                     ['gpt-5.5', 'token', '0.00', '0.00', '0.00', '0.00'],

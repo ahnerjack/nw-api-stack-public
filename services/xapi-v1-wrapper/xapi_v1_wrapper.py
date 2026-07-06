@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gateway_core import (
     AuthPolicy, IPRiskPolicy, ModelAllowPolicy, PolicyPipeline,
     REQUEST_ID_HEADER, build_access_log_record, build_model_list_payload, encode_chunk,
-    make_request_id_from_headers, normalize_request, proxy_request_headers,
+    build_upstream_url, is_models_request, make_request_id_from_headers, normalize_request, proxy_request_headers,
     should_chunk_downstream, should_forward_response_header, upstream_http_error_code,
 )
 
@@ -295,7 +295,7 @@ class Handler(BaseHTTPRequestHandler):
         key_id = int(policy_result.context['key_id'])
         portal_user = policy_result.context['portal_user']
 
-        if self.command in ('GET', 'HEAD') and self.path.split('?', 1)[0].rstrip('/') == '/v1/models':
+        if is_models_request(self.command, self.path):
             return self.respond_models(portal_user, key_id, cip, started)
 
         body = self.read_body()
@@ -310,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
         if MOCK_CHAT_ENABLED and self.path.split('?', 1)[0] == '/v1/chat/completions':
             return self.respond_mock_chat(body, portal_user, key_id, cip, model, started)
 
-        upstream_url = UPSTREAM + self.path
+        upstream_url = build_upstream_url(UPSTREAM, self.path)
         try:
             self.forward_to_upstream(upstream_url, body, portal_user, key_id, cip, model, started)
         except socket.timeout:

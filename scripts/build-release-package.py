@@ -32,6 +32,8 @@ PACKAGE_FILES = [
     "systemd/xapi-portal.env.example",
     "scripts/deploy-aliyun.sh",
     "scripts/deploy-sub2api-host.sh",
+    "scripts/preview_release_update.py",
+    "scripts/deploy-preview-package.sh",
     "scripts/bootstrap-working-copy.sh",
     "README.md",
 ]

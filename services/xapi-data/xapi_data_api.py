@@ -158,6 +158,13 @@ SELECT id,name,status,CASE WHEN length(key)>10 THEN left(key,6)||repeat('*',GREA
                     if v and v not in seen:
                         seen.add(v); out.append(v)
                 return self.sendj({'models':out})
+            if path=='/xapi-data/usage-ledger':
+                start=(qs.get('start',[''])[0] or '').strip(); end=(qs.get('end',[''])[0] or '').strip()
+                where=f"user_id={uid}"
+                if start: where += f" AND created_at >= '{esc_sql(start)} 00:00:00+08'"
+                if end: where += f" AND created_at < ('{esc_sql(end)} 00:00:00+08'::timestamptz + interval '1 day')"
+                ledger=rows(f"SELECT id,COALESCE(to_char(created_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD HH24:MI:SS'),''),COALESCE(requested_model,model,''),COALESCE(input_tokens,0),COALESCE(cache_read_tokens+cache_creation_tokens,0),COALESCE(output_tokens,0),COALESCE(total_cost,0),COALESCE(actual_cost,total_cost,0),COALESCE(request_id,'') FROM usage_logs WHERE {where} ORDER BY id DESC LIMIT 200")
+                return self.sendj({'source':'usage_logs','currency':'backend_unit','ledger':ledger})
             if path=='/xapi-data/pricing':
                 q = """
                 SELECT m.model,

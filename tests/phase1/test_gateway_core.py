@@ -52,6 +52,14 @@ class GatewayCoreTests(unittest.TestCase):
         data = json.loads(body.decode())
         self.assertEqual([m['id'] for m in data['data']], ['a', 'b'])
 
+    def test_route_helpers(self):
+        self.assertEqual(core.path_without_query('/v1/models?x=1'), '/v1/models')
+        self.assertTrue(core.is_models_request('GET', '/v1/models?x=1'))
+        self.assertTrue(core.is_models_request('HEAD', '/v1/models/'))
+        self.assertFalse(core.is_models_request('POST', '/v1/models'))
+        self.assertFalse(core.is_models_request('GET', '/v1/chat/completions'))
+        self.assertEqual(core.build_upstream_url('http://127.0.0.1:18066/', '/v1/models'), 'http://127.0.0.1:18066/v1/models')
+
     def test_proxy_headers(self):
         headers = core.proxy_request_headers({'Host': 'x', 'Authorization': 'Bearer sk', 'Accept-Encoding': 'gzip'}, 'rid')
         self.assertNotIn('Host', headers)
