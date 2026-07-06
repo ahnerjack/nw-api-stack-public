@@ -27,6 +27,7 @@ PACKAGE_FILES = [
     "services/dh-nav/index.html",
     "systemd/xapi-portal.service",
     "systemd/xapi-data.service",
+    "systemd/xapi-v1-wrapper.service",
     "systemd/xapi-portal.env.example",
     "scripts/deploy-aliyun.sh",
     "scripts/deploy-sub2api-host.sh",

@@ -8,6 +8,10 @@ if [ -f services/xapi-v1-wrapper/xapi_v1_wrapper.py ]; then
   install -m 0755 services/xapi-v1-wrapper/xapi_v1_wrapper.py /opt/xapi-v1-wrapper/xapi_v1_wrapper.py
   python3 -m py_compile /opt/xapi-v1-wrapper/xapi_v1_wrapper.py
 fi
+if [ -f systemd/xapi-v1-wrapper.service ]; then
+  install -m 0644 systemd/xapi-v1-wrapper.service /etc/systemd/system/xapi-v1-wrapper.service
+  systemctl daemon-reload
+fi
 if [ -f services/xapi-portal/sync_model_prices.py ]; then
   install -m 0644 services/xapi-portal/sync_model_prices.py /opt/xapi-portal/sync_model_prices.py
 fi

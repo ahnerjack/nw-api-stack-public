@@ -1,0 +1,24 @@
+[Unit]
+Description=NW-API /v1 Policy Wrapper
+After=network-online.target xapi-portal.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/xapi-v1-wrapper
+EnvironmentFile=-/etc/xapi-portal.env
+Environment=XAPI_WRAPPER_HOST=127.0.0.1
+Environment=XAPI_WRAPPER_PORT=18182
+Environment=XAPI_PORTAL_DB=/opt/xapi-portal/xapi_portal.db
+Environment=XAPI_UPSTREAM=http://127.0.0.1:18066
+Environment=XAPI_DATA_BASE=http://127.0.0.1:18066/xapi-data
+Environment=XAPI_UPSTREAM_TIMEOUT_SECONDS=540
+Environment=XAPI_STREAM_IDLE_TIMEOUT_SECONDS=180
+Environment=XAPI_UPSTREAM_CONNECT_TIMEOUT_SECONDS=10
+ExecStart=/usr/bin/python3 /opt/xapi-v1-wrapper/xapi_v1_wrapper.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

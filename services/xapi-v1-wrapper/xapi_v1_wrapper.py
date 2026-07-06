@@ -12,6 +12,9 @@ import select
 import socket
 import sqlite3
 import time
+import secrets
+import re
+import threading
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -34,6 +37,22 @@ HOP_BY_HOP_HEADERS = {
     'te', 'trailer', 'transfer-encoding', 'upgrade', 'content-length',
     'content-encoding',
 }
+
+REQUEST_ID_HEADER = 'X-Request-Id'
+REQUEST_ID_RE = re.compile(r'^[A-Za-z0-9_.:-]{1,80}$')
+_REQUEST_CONTEXT = threading.local()
+
+
+def make_request_id(handler=None):
+    if handler is not None:
+        incoming = (handler.headers.get(REQUEST_ID_HEADER) or handler.headers.get('X-Request-ID') or '').strip()
+        if incoming and REQUEST_ID_RE.fullmatch(incoming):
+            return incoming[:80]
+    return 'req_' + secrets.token_hex(12)
+
+
+def current_request_id():
+    return getattr(_REQUEST_CONTEXT, 'request_id', '')
 
 
 def json_error(handler, code, message, status=403):
@@ -117,7 +136,7 @@ def risk_allowed(ip):
     return True, ''
 
 
-def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', status=0, error_code='', latency_ms=0):
+def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', status=0, error_code='', latency_ms=0, request_id=''):
     con = None
     try:
         con = sqlite3.connect(PORTAL_DB)
@@ -127,11 +146,18 @@ def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', s
             'ip TEXT,method TEXT,path TEXT,model TEXT,status INTEGER,'
             'error_code TEXT,latency_ms INTEGER,created_at INTEGER)'
         )
+        try:
+            con.execute('ALTER TABLE api_access_logs ADD COLUMN request_id TEXT')
+        except sqlite3.OperationalError as exc:
+            if 'duplicate column' not in str(exc).lower():
+                raise
+        con.execute('CREATE INDEX IF NOT EXISTS idx_api_access_logs_request_id ON api_access_logs(request_id)')
         con.execute('DELETE FROM api_access_logs WHERE created_at < ?', (int(time.time()) - 90 * 86400,))
+        rid = request_id or current_request_id()
         con.execute(
-            'INSERT INTO api_access_logs(user_id,key_id,ip,method,path,model,status,error_code,latency_ms,created_at) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?)',
-            (user_id, key_id, ip, method, path, model, status, error_code, latency_ms, int(time.time())),
+            'INSERT INTO api_access_logs(user_id,key_id,ip,method,path,model,status,error_code,latency_ms,created_at,request_id) '
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+            (user_id, key_id, ip, method, path, model, status, error_code, latency_ms, int(time.time()), rid),
         )
         con.commit()
     except Exception:
@@ -161,6 +187,12 @@ class Handler(BaseHTTPRequestHandler):
         # Keep stdlib access noise low; structured access is stored in SQLite.
         return
 
+    def end_headers(self):
+        rid = getattr(self, 'request_id', '')
+        if rid:
+            self.send_header(REQUEST_ID_HEADER, rid)
+        super().end_headers()
+
     def do_GET(self):
         self.proxy()
 
@@ -171,6 +203,8 @@ class Handler(BaseHTTPRequestHandler):
         self.proxy()
 
     def do_OPTIONS(self):
+        self.request_id = make_request_id(self)
+        _REQUEST_CONTEXT.request_id = self.request_id
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Headers', 'authorization,content-type')
@@ -179,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def proxy(self):
+        self.request_id = make_request_id(self)
+        _REQUEST_CONTEXT.request_id = self.request_id
         started = time.time()
         model = ''
         portal_user = None
@@ -266,6 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             for key, value in self.headers.items()
             if key.lower() not in ('host', 'content-length', 'connection', 'accept-encoding')
         }
+        headers[REQUEST_ID_HEADER] = getattr(self, 'request_id', '') or current_request_id()
         request = urllib.request.Request(
             upstream_url,
             data=(body if self.command not in ('GET', 'HEAD') else None),
