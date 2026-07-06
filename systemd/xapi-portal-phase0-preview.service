@@ -1,0 +1,28 @@
+[Unit]
+Description=NW-API phase0 preview portal
+After=network-online.target xapi-data-phase0-preview.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nw-api-phase0-preview/xapi-portal
+Environment=XAPI_PORTAL_HOST=127.0.0.1
+Environment=XAPI_PORTAL_PORT=19080
+Environment=XAPI_PORTAL_DB=/opt/nw-api-phase0-preview/state/xapi_portal.db
+Environment=XAPI_DATA_BASE=http://127.0.0.1:19081/xapi-data
+Environment=NW_API_REPO_DIR=/opt/nw-api-phase0-preview/repo
+Environment=NW_API_BASE_URL=http://10.0.1.66:9088/v1
+Environment=NW_API_UPDATE_LOG=/opt/nw-api-phase0-preview/logs/update.log
+Environment=NW_API_UPDATE_LOCK=/opt/nw-api-phase0-preview/state/update.lock
+Environment=NW_API_UPDATE_MODE=disabled
+Environment="NW_API_PREVIEW_SERVICES=xapi-data-phase0-preview xapi-portal-phase0-preview xapi-v1-wrapper-phase0-preview nw-api-phase0-preview"
+Environment=NW_API_PREVIEW_ROOT=/opt/nw-api-phase0-preview
+Environment=XAPI_ADMIN_EMAIL=root
+Environment=XAPI_ADMIN_PASS=password
+ExecStart=/usr/bin/python3 /opt/nw-api-phase0-preview/xapi-portal/xapi_portal.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

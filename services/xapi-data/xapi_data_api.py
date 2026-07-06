@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, secrets, subprocess, urllib.parse, re, bcrypt, time, sys
+import json, secrets, subprocess, urllib.parse, re, bcrypt, time, sys, os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 def sh(cmd, input_text=None):
@@ -286,4 +286,4 @@ SELECT id,name,status,CASE WHEN length(key)>10 THEN left(key,6)||repeat('*',GREA
         except Exception as e: return self.sendj({'error':str(e)},500)
         self.sendj({'error':'not found'},404)
 
-ThreadingHTTPServer(('127.0.0.1',18181),H).serve_forever()
+ThreadingHTTPServer((os.environ.get('XAPI_DATA_HOST','127.0.0.1'), int(os.environ.get('XAPI_DATA_PORT','18181'))),H).serve_forever()

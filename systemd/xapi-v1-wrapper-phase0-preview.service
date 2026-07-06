@@ -1,0 +1,22 @@
+[Unit]
+Description=NW-API phase0 preview wrapper
+After=network-online.target xapi-data-phase0-preview.service xapi-portal-phase0-preview.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nw-api-phase0-preview/xapi-v1-wrapper
+Environment=XAPI_WRAPPER_HOST=127.0.0.1
+Environment=XAPI_WRAPPER_PORT=19082
+Environment=XAPI_PORTAL_DB=/opt/nw-api-phase0-preview/state/xapi_portal.db
+Environment=XAPI_UPSTREAM=http://127.0.0.1:18443
+Environment=XAPI_DATA_BASE=http://127.0.0.1:19081/xapi-data
+Environment=XAPI_UPSTREAM_CONNECT_TIMEOUT_SECONDS=10
+Environment=XAPI_STREAM_IDLE_TIMEOUT_SECONDS=180
+ExecStart=/usr/bin/python3 /opt/nw-api-phase0-preview/xapi-v1-wrapper/xapi_v1_wrapper.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -4,9 +4,9 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from email.message import EmailMessage
 
-HOST='127.0.0.1'; PORT=18180; BRAND='NW-API'; BASE_URL=os.environ.get('NW_API_BASE_URL','https://api.example.com/v1'); APP_VERSION='V0.0.1.1'; REPO_DIR=os.environ.get('NW_API_REPO_DIR','/opt/nw-api-stack'); UPDATE_LOG=os.environ.get('NW_API_UPDATE_LOG','/var/log/nw-api-update.log'); UPDATE_LOCK=os.environ.get('NW_API_UPDATE_LOCK','/tmp/nw-api-update.lock'); UPDATE_MODE=os.environ.get('NW_API_UPDATE_MODE','git').lower(); UPDATE_REPO=os.environ.get('NW_API_UPDATE_REPO','ahnerjack/nw-api-stack-public'); UPDATE_ASSET_REPO=os.environ.get('NW_API_UPDATE_ASSET_REPO','ahnerjack/nw-api-stack-public'); UPDATE_BRANCH=os.environ.get('NW_API_UPDATE_BRANCH','public-sanitized'); UPDATE_ASSET_RE=re.compile(os.environ.get('NW_API_UPDATE_ASSET_RE',r'nw-api-.*-linux-amd64\.tar\.gz$')); UPDATE_CACHE_TTL=int(os.environ.get('NW_API_UPDATE_CACHE_TTL','1200'))
+HOST=os.environ.get('XAPI_PORTAL_HOST','127.0.0.1'); PORT=int(os.environ.get('XAPI_PORTAL_PORT','18180')); BRAND='NW-API'; BASE_URL=os.environ.get('NW_API_BASE_URL','https://api.example.com/v1'); APP_VERSION='V0.0.1.1'; REPO_DIR=os.environ.get('NW_API_REPO_DIR','/opt/nw-api-stack'); UPDATE_LOG=os.environ.get('NW_API_UPDATE_LOG','/var/log/nw-api-update.log'); UPDATE_LOCK=os.environ.get('NW_API_UPDATE_LOCK','/tmp/nw-api-update.lock'); UPDATE_MODE=os.environ.get('NW_API_UPDATE_MODE','git').lower(); UPDATE_REPO=os.environ.get('NW_API_UPDATE_REPO','ahnerjack/nw-api-stack-public'); UPDATE_ASSET_REPO=os.environ.get('NW_API_UPDATE_ASSET_REPO','ahnerjack/nw-api-stack-public'); UPDATE_BRANCH=os.environ.get('NW_API_UPDATE_BRANCH','public-sanitized'); UPDATE_ASSET_RE=re.compile(os.environ.get('NW_API_UPDATE_ASSET_RE',r'nw-api-.*-linux-amd64\.tar\.gz$')); UPDATE_CACHE_TTL=int(os.environ.get('NW_API_UPDATE_CACHE_TTL','1200'))
 PREVIEW_ROOT=os.environ.get('NW_API_PREVIEW_ROOT','/opt/nw-api-preview'); PREVIEW_SERVICES=os.environ.get('NW_API_PREVIEW_SERVICES','xapi-data-mock-preview xapi-portal-preview nw-api-preview').split()
-DB='/opt/xapi-portal/xapi_portal.db'; DATA_BASE=os.environ.get('XAPI_DATA_BASE','http://127.0.0.1:18066/xapi-data')
+DB=os.environ.get('XAPI_PORTAL_DB','/opt/xapi-portal/xapi_portal.db'); DATA_BASE=os.environ.get('XAPI_DATA_BASE','http://127.0.0.1:18066/xapi-data')
 ADMIN_EMAIL=os.environ.get('XAPI_ADMIN_EMAIL','admin@xapi.local'); ADMIN_PASS=os.environ.get('XAPI_ADMIN_PASS','change-me-via-env')
 SMTP_HOST=os.environ.get('XAPI_SMTP_HOST',''); SMTP_PORT=int(os.environ.get('XAPI_SMTP_PORT','587')); SMTP_USER=os.environ.get('XAPI_SMTP_USER',''); SMTP_PASS=os.environ.get('XAPI_SMTP_PASS',''); SMTP_FROM=os.environ.get('XAPI_SMTP_FROM',SMTP_USER or 'noreply@xapi.local'); SMTP_TLS=os.environ.get('XAPI_SMTP_TLS','1').lower() in ('1','true','yes','on')
 PAYMENT_NOTICE=os.environ.get('NW_API_PAYMENT_NOTICE','')
@@ -164,6 +164,8 @@ def release_update_state(force=False):
     return data
 
 def update_state(force=False):
+    if UPDATE_MODE in ('disabled','off','none'):
+        return {'ok': True, 'available': False, 'local': APP_VERSION, 'remote': '', 'remote_tag': '', 'branch': UPDATE_BRANCH or 'public-sanitized', 'error': 'updates disabled in this runtime'}
     if UPDATE_MODE.startswith('release'):
         return release_update_state(force)
     return git_update_state(force)
@@ -610,6 +612,8 @@ class H(BaseHTTPRequestHandler):
         if path=='/admin-update/restart.json': return self.admin_update_restart_json(u,f)
         if path=='/admin-update/rollback.json': return self.admin_update_rollback_json(u,f)
         if path=='/admin-update/apply':
+            if UPDATE_MODE in ('disabled','off','none'):
+                return self.sendh(shell('系统更新','<div class="card err">当前预览环境已禁用在线更新，避免误操作正式部署。</div>',u,'admin_update'),403)
             if u.get('role')!='admin':
                 return self.sendh(shell('无权限','<div class="card err">只有管理员可以执行系统更新。</div>',u),403)
             if f.get('csrf')!=u.get('csrf'):

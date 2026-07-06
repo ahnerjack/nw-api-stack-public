@@ -1,0 +1,19 @@
+[Unit]
+Description=NW-API phase0 preview gateway :9088
+After=network-online.target xapi-data-phase0-preview.service xapi-portal-phase0-preview.service xapi-v1-wrapper-phase0-preview.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nw-api-phase0-preview/preview-nav
+Environment=NW_API_PREVIEW_HOST=0.0.0.0
+Environment=NW_API_PREVIEW_PORT=9088
+Environment=NW_API_PREVIEW_PORTAL_BASE=http://127.0.0.1:19080
+Environment=NW_API_PREVIEW_WRAPPER_BASE=http://127.0.0.1:19082
+ExecStart=/usr/bin/python3 /opt/nw-api-phase0-preview/preview-nav/preview_gateway.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

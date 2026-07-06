@@ -1,0 +1,20 @@
+[Unit]
+Description=NW-API phase0 preview data mock
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nw-api-phase0-preview/xapi-data-mock
+Environment=XAPI_DATA_HOST=127.0.0.1
+Environment=XAPI_DATA_PORT=19081
+Environment=XAPI_DATA_MOCK_DB=/opt/nw-api-phase0-preview/state/xapi_data_mock.db
+Environment=XAPI_MOCK_ADMIN_EMAIL=root
+Environment=XAPI_MOCK_ADMIN_PASS=password
+ExecStart=/usr/bin/python3 /opt/nw-api-phase0-preview/xapi-data-mock/phase0_data_mock.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
