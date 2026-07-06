@@ -18,6 +18,8 @@ rsync -a --delete --exclude '.git' --exclude '.venv*' --exclude '__pycache__' "$
 install -m 0644 "$REPO_SRC/systemd/xapi-data-phase0-preview.service" /etc/systemd/system/xapi-data-phase0-preview.service
 install -m 0644 "$REPO_SRC/systemd/xapi-portal-phase0-preview.service" /etc/systemd/system/xapi-portal-phase0-preview.service
 install -m 0644 "$REPO_SRC/systemd/xapi-v1-wrapper-phase0-preview.service" /etc/systemd/system/xapi-v1-wrapper-phase0-preview.service
+# Keep the legacy Python gateway unit available for rollback/manual comparison,
+# but the phase2 preview entrypoint is nginx on :9088.
 install -m 0644 "$REPO_SRC/systemd/nw-api-phase0-preview.service" /etc/systemd/system/nw-api-phase0-preview.service
 
 python3 -m py_compile \
@@ -28,13 +30,16 @@ python3 -m py_compile \
   "$ROOT/preview-nav/preview_gateway.py"
 
 systemctl daemon-reload
-systemctl restart xapi-data-phase0-preview xapi-portal-phase0-preview xapi-v1-wrapper-phase0-preview nw-api-phase0-preview
-systemctl enable xapi-data-phase0-preview xapi-portal-phase0-preview xapi-v1-wrapper-phase0-preview nw-api-phase0-preview >/dev/null 2>&1 || true
+systemctl restart xapi-data-phase0-preview xapi-portal-phase0-preview xapi-v1-wrapper-phase0-preview
+systemctl enable xapi-data-phase0-preview xapi-portal-phase0-preview xapi-v1-wrapper-phase0-preview >/dev/null 2>&1 || true
+
+NW_API_PHASE0_NGINX_PORT="$PORT" "$REPO_SRC/scripts/deploy-phase0-nginx-preview.sh" cutover
 
 systemctl is-active xapi-data-phase0-preview
 systemctl is-active xapi-portal-phase0-preview
 systemctl is-active xapi-v1-wrapper-phase0-preview
-systemctl is-active nw-api-phase0-preview
+systemctl is-active nginx
+systemctl is-active nw-api-phase0-preview && { echo "legacy Python preview gateway should be stopped" >&2; exit 1; } || true
 ss -lntp | grep ":$PORT" || true
 
 # HTTP smoke checks

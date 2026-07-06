@@ -90,6 +90,7 @@ def run_case(name, method, url, api_key, payload, total, concurrency, timeout):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=9088, help="public preview gateway port")
     parser.add_argument("--total", type=int, default=100)
     parser.add_argument("--concurrency", type=int, default=30)
     parser.add_argument("--timeout", type=float, default=10)
@@ -99,7 +100,7 @@ def main():
     for name, method, tmpl, api_key, payload, scope in DEFAULT_CASES:
         if scope == "internal" and not args.include_internal:
             continue
-        url = tmpl.format(host=args.host)
+        url = tmpl.format(host=args.host).replace(":9088/", f":{args.port}/") if scope == "public" else tmpl.format(host=args.host)
         print(json.dumps(run_case(name, method, url, api_key, payload, args.total, args.concurrency, args.timeout), ensure_ascii=False), flush=True)
 
 
