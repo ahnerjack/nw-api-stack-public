@@ -304,6 +304,55 @@ INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
             con.execute("DELETE FROM risk_rules WHERE pattern='5.6.7.8' AND action='block'")
             con.commit(); con.close()
 
+    def test_auth_reject_access_log(self):
+        status, headers, raw = request(
+            self.wrapper_server.url,
+            'GET',
+            '/v1/models',
+            key='sk-bad',
+            headers={'X-Request-Id': 'req_auth_reject_test'},
+        )
+        self.assertEqual(status, 401, raw)
+        self.assertIn(b'INVALID_API_KEY', raw)
+        con = sqlite3.connect(self.db_path)
+        row = con.execute(
+            "SELECT user_id,key_id,ip,status,error_code,request_id FROM api_access_logs WHERE request_id='req_auth_reject_test' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        con.close()
+        self.assertIsNotNone(row)
+        self.assertIsNone(row[0])
+        self.assertIsNone(row[1])
+        self.assertEqual(row[2], '127.0.0.1')
+        self.assertEqual(row[3], 401)
+        self.assertEqual(row[4], 'INVALID_API_KEY')
+        self.assertEqual(row[5], 'req_auth_reject_test')
+
+    def test_model_not_allowed_access_log(self):
+        status, headers, raw = request(
+            self.wrapper_server.url,
+            'POST',
+            '/v1/chat/completions',
+            {'model': 'gpt-unknown', 'messages': []},
+            headers={'X-Request-Id': 'req_model_reject_test'},
+        )
+        self.assertEqual(status, 403, raw)
+        self.assertIn(b'MODEL_NOT_ALLOWED', raw)
+        con = sqlite3.connect(self.db_path)
+        row = con.execute(
+            "SELECT user_id,key_id,ip,method,path,model,status,error_code,request_id FROM api_access_logs WHERE request_id='req_model_reject_test' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        con.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], 1)
+        self.assertEqual(row[1], 11)
+        self.assertEqual(row[2], '127.0.0.1')
+        self.assertEqual(row[3], 'POST')
+        self.assertEqual(row[4], '/v1/chat/completions')
+        self.assertEqual(row[5], 'gpt-unknown')
+        self.assertEqual(row[6], 403)
+        self.assertEqual(row[7], 'MODEL_NOT_ALLOWED')
+        self.assertEqual(row[8], 'req_model_reject_test')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

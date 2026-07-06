@@ -234,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             AuthPolicy(lambda key: post_json('/keys/verify', {'key': key}), portal_user_by_sub2),
         ]).run(req)
         if not policy_result.allowed:
-            log_access(user_id=policy_result.context.get('sub2_uid'), key_id=policy_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=policy_result.http_status, error_code=policy_result.error_code, latency_ms=self.elapsed(started))
+            log_access(user_id=policy_result.context.get('sub2_uid'), key_id=policy_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=policy_result.http_status, error_code=policy_result.error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
             return json_error(self, policy_result.error_code, policy_result.error_message, policy_result.http_status)
 
         sub2_uid = int(policy_result.context['sub2_uid'])
@@ -250,24 +250,24 @@ class Handler(BaseHTTPRequestHandler):
         if model:
             model_result = PolicyPipeline([ModelAllowPolicy(allowed_models)]).run(model_req, {'portal_user': portal_user})
             if not model_result.allowed:
-                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started))
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
                 return json_error(self, model_result.error_code, model_result.error_message, model_result.http_status)
 
         upstream_url = UPSTREAM + self.path
         reachable, reason = upstream_reachable(UPSTREAM)
         if not reachable:
-            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=502, error_code='UPSTREAM_TUNNEL_DOWN', latency_ms=self.elapsed(started))
+            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=502, error_code='UPSTREAM_TUNNEL_DOWN', latency_ms=self.elapsed(started), request_id=self.request_id)
             return json_error(self, 'UPSTREAM_TUNNEL_DOWN', f'Upstream tunnel unavailable: {reason}', 502)
 
         try:
             self.forward_to_upstream(upstream_url, body, portal_user, key_id, cip, model, started)
         except socket.timeout:
-            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=504, error_code='UPSTREAM_TIMEOUT', latency_ms=self.elapsed(started))
+            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=504, error_code='UPSTREAM_TIMEOUT', latency_ms=self.elapsed(started), request_id=self.request_id)
             return json_error(self, 'UPSTREAM_TIMEOUT', 'Upstream timed out', 504)
         except BrokenPipeError:
-            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=499, error_code='CLIENT_CLOSED', latency_ms=self.elapsed(started))
+            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=499, error_code='CLIENT_CLOSED', latency_ms=self.elapsed(started), request_id=self.request_id)
         except Exception as exc:
-            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=502, error_code='UPSTREAM_ERROR', latency_ms=self.elapsed(started))
+            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=502, error_code='UPSTREAM_ERROR', latency_ms=self.elapsed(started), request_id=self.request_id)
             return json_error(self, 'UPSTREAM_ERROR', str(exc), 502)
 
     def read_body(self):
@@ -283,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
-        log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, status=200, latency_ms=self.elapsed(started))
+        log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, status=200, latency_ms=self.elapsed(started), request_id=self.request_id)
 
     def forward_to_upstream(self, upstream_url, body, portal_user, key_id, cip, model, started):
         headers = proxy_request_headers(dict(self.headers.items()), getattr(self, 'request_id', '') or current_request_id())
@@ -320,13 +320,13 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if self.command != 'HEAD':
                     self.stream_response(response, chunked_downstream, content_length)
-                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=response.status, latency_ms=self.elapsed(started))
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=response.status, latency_ms=self.elapsed(started), request_id=self.request_id)
             except socket.timeout:
                 self.close_connection = True
-                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=504, error_code='UPSTREAM_STREAM_TIMEOUT', latency_ms=self.elapsed(started))
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=504, error_code='UPSTREAM_STREAM_TIMEOUT', latency_ms=self.elapsed(started), request_id=self.request_id)
             except BrokenPipeError:
                 self.close_connection = True
-                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=499, error_code='CLIENT_CLOSED', latency_ms=self.elapsed(started))
+                log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=499, error_code='CLIENT_CLOSED', latency_ms=self.elapsed(started), request_id=self.request_id)
 
     def stream_response(self, response, chunked_downstream, content_length=None):
         sock = response.fp.raw._sock  # stdlib HTTPResponse socket; used for idle timeout between chunks.
@@ -374,7 +374,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
         self.wfile.flush()
-        log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=status, error_code=error_code, latency_ms=self.elapsed(started))
+        log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=status, error_code=error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
 
     @staticmethod
     def elapsed(started):
