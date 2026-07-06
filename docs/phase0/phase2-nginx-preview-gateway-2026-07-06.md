@@ -21,6 +21,10 @@ Replace the Python preview entrypoint on `:9088` with nginx, while keeping the e
   - `scripts/deploy-phase0-preview-host.sh`
 - Updated perf probe to support testing alternate public gateway ports:
   - `scripts/phase0_preview_perf.py --port 9089`
+- Added reusable route/leak smoke check:
+  - `scripts/phase0_preview_smoke.sh`
+- Added nginx preview log rotation:
+  - `logrotate/nw-api-phase0-preview-nginx`
 
 ## Deployment performed
 

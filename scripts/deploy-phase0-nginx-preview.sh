@@ -71,7 +71,9 @@ export NW_API_PHASE0_NGINX_PORT=$PORT
 envsubst '${NW_API_PHASE0_NGINX_PORT}' < "$TEMPLATE" > /tmp/nw-api-phase0-preview-nginx.conf
 install -m 0644 /tmp/nw-api-phase0-preview-nginx.conf "$AVAILABLE"
 ln -sfn "$AVAILABLE" "$ENABLED"
+install -m 0644 "$REPO_SRC/logrotate/nw-api-phase0-preview-nginx" /etc/logrotate.d/nw-api-phase0-preview-nginx
 nginx -t
+logrotate -d /etc/logrotate.d/nw-api-phase0-preview-nginx >/dev/null
 systemctl reload nginx
 
 if [[ $MODE == "cutover" ]]; then
