@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gateway_core import (
-    AuthPolicy, IPRiskPolicy, ModelAllowPolicy, NormalizedRequest,
+    AuthPolicy, IPRiskPolicy, ModelAllowPolicy, NormalizedRequest, PolicyPipeline,
     REQUEST_ID_HEADER, build_model_list_payload, encode_chunk,
     extract_bearer_token, make_request_id_from_headers, model_from_json_body,
     proxy_request_headers, should_chunk_downstream, should_forward_response_header,
@@ -228,19 +228,17 @@ class Handler(BaseHTTPRequestHandler):
             api_key=extract_bearer_token(dict(self.headers.items())),
         )
 
-        risk_result = IPRiskPolicy(risk_allowed).evaluate(req)
-        if not risk_result.allowed:
-            log_access(ip=cip, method=self.command, path=self.path, status=risk_result.http_status, error_code=risk_result.error_code, latency_ms=self.elapsed(started))
-            return json_error(self, risk_result.error_code, risk_result.error_message, risk_result.http_status)
+        policy_result = PolicyPipeline([
+            IPRiskPolicy(risk_allowed),
+            AuthPolicy(lambda key: post_json('/keys/verify', {'key': key}), portal_user_by_sub2),
+        ]).run(req)
+        if not policy_result.allowed:
+            log_access(user_id=policy_result.context.get('sub2_uid'), key_id=policy_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=policy_result.http_status, error_code=policy_result.error_code, latency_ms=self.elapsed(started))
+            return json_error(self, policy_result.error_code, policy_result.error_message, policy_result.http_status)
 
-        auth_result = AuthPolicy(lambda key: post_json('/keys/verify', {'key': key}), portal_user_by_sub2).evaluate(req)
-        if not auth_result.allowed:
-            log_access(user_id=auth_result.context.get('sub2_uid'), key_id=auth_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=auth_result.http_status, error_code=auth_result.error_code, latency_ms=self.elapsed(started))
-            return json_error(self, auth_result.error_code, auth_result.error_message, auth_result.http_status)
-
-        sub2_uid = int(auth_result.context['sub2_uid'])
-        key_id = int(auth_result.context['key_id'])
-        portal_user = auth_result.context['portal_user']
+        sub2_uid = int(policy_result.context['sub2_uid'])
+        key_id = int(policy_result.context['key_id'])
+        portal_user = policy_result.context['portal_user']
 
         if self.command == 'GET' and self.path.split('?', 1)[0].rstrip('/') == '/v1/models':
             return self.respond_models(portal_user, key_id, cip, started)
@@ -258,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
                 api_key=req.api_key,
                 model=model,
             )
-            model_result = ModelAllowPolicy(allowed_models).evaluate(model_req, {'portal_user': portal_user})
+            model_result = PolicyPipeline([ModelAllowPolicy(allowed_models)]).run(model_req, {'portal_user': portal_user})
             if not model_result.allowed:
                 log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started))
                 return json_error(self, model_result.error_code, model_result.error_message, model_result.http_status)

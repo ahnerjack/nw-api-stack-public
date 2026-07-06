@@ -124,6 +124,52 @@ class GatewayCoreTests(unittest.TestCase):
         empty = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.1.1.1', 'rid')
         self.assertTrue(core.ModelAllowPolicy(lambda uid: set()).evaluate(empty, {}).allowed)
 
+    def test_policy_pipeline_allows_and_merges_context(self):
+        req = core.NormalizedRequest('POST', '/v1/chat/completions', {}, b'', '1.1.1.1', 'rid', api_key='sk-ok', model='gpt-5.5')
+        pipeline = core.PolicyPipeline([
+            core.IPRiskPolicy(lambda ip: (True, '')),
+            core.AuthPolicy(lambda key: {'ok': True, 'user_id': 9, 'key_id': 3}, lambda uid: {'id': 7}),
+            core.ModelAllowPolicy(lambda uid: {'gpt-5.5'}),
+        ])
+        result = pipeline.run(req)
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.context['sub2_uid'], 9)
+        self.assertEqual(result.context['key_id'], 3)
+        self.assertEqual(result.context['portal_user']['id'], 7)
+        self.assertEqual(result.context['model'], 'gpt-5.5')
+
+    def test_policy_pipeline_short_circuits(self):
+        calls = []
+        req = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.1.1.1', 'rid', api_key='sk-ok')
+
+        class FirstDeny:
+            def evaluate(self, req, ctx=None):
+                calls.append('first')
+                return core.PolicyResult.deny('DENIED', 'denied', 403, marker='x')
+
+        class Second:
+            def evaluate(self, req, ctx=None):
+                calls.append('second')
+                return core.PolicyResult.allow()
+
+        result = core.PolicyPipeline([FirstDeny(), Second()]).run(req)
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.error_code, 'DENIED')
+        self.assertEqual(result.context['marker'], 'x')
+        self.assertEqual(calls, ['first'])
+
+    def test_policy_pipeline_uses_initial_context(self):
+        req = core.NormalizedRequest('GET', '/v1/models', {}, b'', '1.1.1.1', 'rid')
+
+        class NeedsContext:
+            def evaluate(self, req, ctx=None):
+                return core.PolicyResult.allow(extra=ctx['existing'] + '-ok')
+
+        result = core.PolicyPipeline([NeedsContext()]).run(req, {'existing': 'seed'})
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.context['existing'], 'seed')
+        self.assertEqual(result.context['extra'], 'seed-ok')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -102,6 +102,27 @@ class ModelAllowPolicy:
         return PolicyResult.allow(model=model)
 
 
+class PolicyPipeline:
+    def __init__(self, policies):
+        self.policies = list(policies)
+
+    def run(self, req: 'NormalizedRequest', ctx: dict[str, Any] | None = None) -> PolicyResult:
+        merged = dict(ctx or {})
+        for policy in self.policies:
+            result = policy.evaluate(req, merged)
+            if result.context:
+                merged.update(result.context)
+            if not result.allowed:
+                return PolicyResult(
+                    allowed=False,
+                    error_code=result.error_code,
+                    error_message=result.error_message,
+                    http_status=result.http_status,
+                    context=merged,
+                )
+        return PolicyResult.allow(**merged)
+
+
 @dataclass(frozen=True)
 class NormalizedRequest:
     method: str
