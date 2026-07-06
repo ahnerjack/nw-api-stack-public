@@ -6,6 +6,9 @@ install -m 0644 services/xapi-portal/xapi_portal.py /opt/xapi-portal/xapi_portal
 if [ -f services/xapi-v1-wrapper/xapi_v1_wrapper.py ]; then
   install -d /opt/xapi-v1-wrapper
   install -m 0755 services/xapi-v1-wrapper/xapi_v1_wrapper.py /opt/xapi-v1-wrapper/xapi_v1_wrapper.py
+  if [ -f services/xapi-v1-wrapper/gateway_core.py ]; then
+    install -m 0644 services/xapi-v1-wrapper/gateway_core.py /opt/xapi-v1-wrapper/gateway_core.py
+  fi
   python3 -m py_compile /opt/xapi-v1-wrapper/xapi_v1_wrapper.py
 fi
 if [ -f systemd/xapi-v1-wrapper.service ]; then

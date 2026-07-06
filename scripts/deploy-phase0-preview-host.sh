@@ -9,6 +9,7 @@ install -d "$ROOT" "$ROOT/state" "$ROOT/logs" "$ROOT/repo" "$ROOT/xapi-portal" "
 
 install -m 0644 "$REPO_SRC/services/xapi-portal/xapi_portal.py" "$ROOT/xapi-portal/xapi_portal.py"
 install -m 0755 "$REPO_SRC/services/xapi-v1-wrapper/xapi_v1_wrapper.py" "$ROOT/xapi-v1-wrapper/xapi_v1_wrapper.py"
+install -m 0644 "$REPO_SRC/services/xapi-v1-wrapper/gateway_core.py" "$ROOT/xapi-v1-wrapper/gateway_core.py"
 install -m 0755 "$REPO_SRC/services/xapi-data-mock/phase0_data_mock.py" "$ROOT/xapi-data-mock/phase0_data_mock.py"
 install -m 0755 "$REPO_SRC/services/preview-nav/preview_gateway.py" "$ROOT/preview-nav/preview_gateway.py"
 
@@ -22,6 +23,7 @@ install -m 0644 "$REPO_SRC/systemd/nw-api-phase0-preview.service" /etc/systemd/s
 python3 -m py_compile \
   "$ROOT/xapi-portal/xapi_portal.py" \
   "$ROOT/xapi-v1-wrapper/xapi_v1_wrapper.py" \
+  "$ROOT/xapi-v1-wrapper/gateway_core.py" \
   "$ROOT/xapi-data-mock/phase0_data_mock.py" \
   "$ROOT/preview-nav/preview_gateway.py"
 

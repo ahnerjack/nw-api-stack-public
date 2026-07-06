@@ -12,13 +12,21 @@ import select
 import socket
 import sqlite3
 import time
-import secrets
-import re
 import threading
+import sys
+from pathlib import Path
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gateway_core import (
+        HOP_BY_HOP_HEADERS, REQUEST_ID_HEADER, build_model_list_payload,
+        encode_chunk, make_request_id_from_headers, proxy_request_headers,
+        should_chunk_downstream, should_forward_response_header,
+    )
 
 HOST = os.environ.get('XAPI_WRAPPER_HOST', '127.0.0.1')
 PORT = int(os.environ.get('XAPI_WRAPPER_PORT', '18182'))
@@ -32,23 +40,11 @@ UPSTREAM_CONNECT_TIMEOUT = float(os.environ.get('XAPI_UPSTREAM_CONNECT_TIMEOUT_S
 STREAM_IDLE_TIMEOUT = float(os.environ.get('XAPI_STREAM_IDLE_TIMEOUT_SECONDS', '180'))
 STREAM_CHUNK_SIZE = int(os.environ.get('XAPI_STREAM_CHUNK_SIZE', '8192'))
 
-HOP_BY_HOP_HEADERS = {
-    'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-    'te', 'trailer', 'transfer-encoding', 'upgrade', 'content-length',
-    'content-encoding',
-}
-
-REQUEST_ID_HEADER = 'X-Request-Id'
-REQUEST_ID_RE = re.compile(r'^[A-Za-z0-9_.:-]{1,80}$')
 _REQUEST_CONTEXT = threading.local()
 
 
 def make_request_id(handler=None):
-    if handler is not None:
-        incoming = (handler.headers.get(REQUEST_ID_HEADER) or handler.headers.get('X-Request-ID') or '').strip()
-        if incoming and REQUEST_ID_RE.fullmatch(incoming):
-            return incoming[:80]
-    return 'req_' + secrets.token_hex(12)
+    return make_request_id_from_headers(handler.headers if handler is not None else {})
 
 
 def current_request_id():
@@ -285,9 +281,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b''
 
     def respond_models(self, portal_user, key_id, cip, started):
-        models = sorted(allowed_models(portal_user['id']))
-        payload = {'object': 'list', 'data': [{'id': m, 'object': 'model', 'created': 0, 'owned_by': 'nw-api'} for m in models]}
-        body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        models = allowed_models(portal_user['id'])
+        body = build_model_list_payload(models)
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
@@ -297,12 +292,7 @@ class Handler(BaseHTTPRequestHandler):
         log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, status=200, latency_ms=self.elapsed(started))
 
     def forward_to_upstream(self, upstream_url, body, portal_user, key_id, cip, model, started):
-        headers = {
-            key: value
-            for key, value in self.headers.items()
-            if key.lower() not in ('host', 'content-length', 'connection', 'accept-encoding')
-        }
-        headers[REQUEST_ID_HEADER] = getattr(self, 'request_id', '') or current_request_id()
+        headers = proxy_request_headers(dict(self.headers.items()), getattr(self, 'request_id', '') or current_request_id())
         request = urllib.request.Request(
             upstream_url,
             data=(body if self.command not in ('GET', 'HEAD') else None),
@@ -324,9 +314,9 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         content_length = None
                     self.send_header(key, value)
-                elif lower not in HOP_BY_HOP_HEADERS:
+                elif should_forward_response_header(key):
                     self.send_header(key, value)
-            chunked_downstream = content_length is None and self.command != 'HEAD'
+            chunked_downstream = should_chunk_downstream(content_length, self.command)
             if chunked_downstream:
                 self.send_header('Transfer-Encoding', 'chunked')
             self.send_header('X-Accel-Buffering', 'no')
@@ -366,9 +356,7 @@ class Handler(BaseHTTPRequestHandler):
             if remaining_body is not None:
                 remaining_body -= len(chunk)
             if chunked_downstream:
-                self.wfile.write((f'{len(chunk):X}\r\n').encode('ascii'))
-                self.wfile.write(chunk)
-                self.wfile.write(b'\r\n')
+                self.wfile.write(encode_chunk(chunk))
             else:
                 self.wfile.write(chunk)
             self.wfile.flush()
@@ -386,7 +374,7 @@ class Handler(BaseHTTPRequestHandler):
             error_code = 'UPSTREAM_UNAVAILABLE'
         self.send_response(status)
         for key, value in exc.headers.items():
-            if key.lower() not in HOP_BY_HOP_HEADERS:
+            if should_forward_response_header(key):
                 self.send_header(key, value)
         self.send_header('Content-Length', str(len(payload)))
         self.end_headers()
