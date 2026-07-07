@@ -77,6 +77,7 @@ class MockDataHandler(BaseHTTPRequestHandler):
 
 class MockUpstreamHandler(BaseHTTPRequestHandler):
     seen_request_ids = []
+    seen_authorizations = []
 
     def log_message(self, *args):
         return
@@ -93,6 +94,9 @@ class MockUpstreamHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         rid = self.headers.get('X-Request-Id') or self.headers.get('X-Request-ID')
+        auth = self.headers.get('Authorization')
+        if auth:
+            self.__class__.seen_authorizations.append(auth)
         if rid:
             self.__class__.seen_request_ids.append(rid)
         ln = int(self.headers.get('Content-Length', '0') or 0)
@@ -167,6 +171,7 @@ INSERT INTO model_prices(model,input_price,output_price) VALUES('gpt-5.4-mini',1
         cls.wrapper.PORTAL_DB = cls.db_path
         cls.wrapper.DATA_BASE = cls.data.url + '/xapi-data'
         cls.wrapper.UPSTREAM = cls.upstream.url
+        cls.wrapper.UPSTREAM_API_KEY = 'sk-upstream-service-test'
         cls.wrapper._SCHEMA_READY = False
         cls.wrapper.UPSTREAM_CONNECT_TIMEOUT = 2
         cls.wrapper.UPSTREAM_TIMEOUT = 5
@@ -198,6 +203,13 @@ INSERT INTO model_prices(model,input_price,output_price) VALUES('gpt-5.4-mini',1
         row = con.execute('SELECT last_used_at FROM nw_api_keys WHERE id=51').fetchone()
         con.close()
         self.assertIsNotNone(row[0])
+
+    def test_nw_key_uses_service_upstream_key(self):
+        MockUpstreamHandler.seen_authorizations.clear()
+        status, headers, raw = request(self.wrapper_server.url, 'POST', '/v1/chat/completions', {'model': 'gpt-5.5', 'messages': [{'role': 'user', 'content': 'hi'}]}, key=self.nw_key)
+        self.assertEqual(status, 200, raw)
+        self.assertIn('Bearer sk-upstream-service-test', MockUpstreamHandler.seen_authorizations)
+        self.assertNotIn('Bearer '+self.nw_key, MockUpstreamHandler.seen_authorizations)
 
     def test_nw_owned_key_shadow_usage_and_wallet_ledger(self):
         rid = 'req_stage9_shadow_usage'

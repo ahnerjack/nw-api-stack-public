@@ -36,6 +36,7 @@ HOST = os.environ.get('XAPI_WRAPPER_HOST', '127.0.0.1')
 PORT = int(os.environ.get('XAPI_WRAPPER_PORT', '18182'))
 PORTAL_DB = os.environ.get('XAPI_PORTAL_DB', '/opt/xapi-portal/xapi_portal.db')
 UPSTREAM = os.environ.get('XAPI_UPSTREAM', 'http://127.0.0.1:18066').rstrip('/')
+UPSTREAM_API_KEY = os.environ.get('XAPI_UPSTREAM_API_KEY', '').strip()
 DATA_BASE = os.environ.get('XAPI_DATA_BASE', UPSTREAM + '/xapi-data').rstrip('/')
 
 DATA_TIMEOUT = float(os.environ.get('XAPI_DATA_TIMEOUT_SECONDS', '25'))
@@ -295,6 +296,13 @@ def record_shadow_usage(portal_user, key_id, method, path, model, status, usage_
         print('record_shadow_usage_failed:', repr(exc), file=sys.stderr)
 
 
+def upstream_request_headers(headers, request_id):
+    out = proxy_request_headers(dict(headers.items()) if hasattr(headers, 'items') else dict(headers), request_id)
+    if UPSTREAM_API_KEY:
+        out['Authorization'] = 'Bearer ' + UPSTREAM_API_KEY
+    return out
+
+
 def upstream_reachable(url):
     parts = urlsplit(url)
     host = parts.hostname
@@ -458,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
             record_shadow_usage(portal_user, key_id, self.command, self.path, model, 200, parse_usage_from_body(raw_usage_body, 'application/json'), self.elapsed(started), request_id=self.request_id)
 
     def forward_to_upstream(self, upstream_url, body, portal_user, key_id, cip, model, started):
-        headers = proxy_request_headers(dict(self.headers.items()), getattr(self, 'request_id', '') or current_request_id())
+        headers = upstream_request_headers(self.headers, getattr(self, 'request_id', '') or current_request_id())
         request = urllib.request.Request(
             upstream_url,
             data=(body if self.command not in ('GET', 'HEAD') else None),
