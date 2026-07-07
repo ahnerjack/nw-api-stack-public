@@ -32,6 +32,7 @@ PACKAGE_FILES = [
     "systemd/xapi-data.service",
     "systemd/xapi-v1-wrapper.service",
     "systemd/xapi-portal.env.example",
+    "systemd/Caddyfile.current",
     "scripts/deploy-aliyun.sh",
     "scripts/deploy-sub2api-host.sh",
     "scripts/bootstrap-working-copy.sh",

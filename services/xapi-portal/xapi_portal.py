@@ -581,10 +581,16 @@ class H(BaseHTTPRequestHandler):
             c=SimpleCookie(self.headers.get('Cookie','')); sid=c.get('sid')
             if sid: SESS.pop(sid.value,None)
             self.send_response(302); self.send_header('Set-Cookie','sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax'); self.send_header('Location','/home'); self.end_headers(); return
-        if path=='/login': return self.login()
-        if path=='/register': return self.register()
-        if path=='/forgot': return self.forgot()
         u=current(self)
+        if path=='/login':
+            if u: return self.redirect('/dashboard')
+            return self.login()
+        if path=='/register':
+            if u: return self.redirect('/dashboard')
+            return self.register()
+        if path=='/forgot':
+            if u: return self.redirect('/dashboard')
+            return self.forgot()
         if path=='/plans' and not u: return self.public_plans()
         if path=='/risk' and not u: return self.public_risk()
         if path in ('/models','/models/') and not u: return self.public_models()

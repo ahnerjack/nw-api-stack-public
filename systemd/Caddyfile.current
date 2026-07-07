@@ -1,0 +1,264 @@
+39.96.80.226.sslip.io {
+	redir https://of.ahner.cn{uri} 308
+}
+
+of.ahner.cn {
+	handle_path /downloads/* {
+		root * /srv/hermes-downloads
+		file_server
+	}
+
+	handle /legacy-local/home* {
+		header Location /home
+		respond "" 308
+	}
+	handle /legacy-local/dashboard* {
+		header Location /dashboard
+		respond "" 308
+	}
+	handle /legacy-local/login* {
+		header Location /login
+		respond "" 308
+	}
+	handle /legacy-local/relay* {
+		header Location /relay/
+		respond "" 308
+	}
+	handle /legacy-local/* {
+		respond 404
+	}
+
+	handle /admin/dashboard* {
+		respond 404
+	}
+
+	handle /admin {
+		respond 404
+	}
+	handle /admin/* {
+		respond 404
+	}
+
+	handle / {
+		root * /srv/hermes-portal
+		file_server {
+			index index.html
+		}
+	}
+	handle /pricing* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /docs {
+		rewrite * /docs.html
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /models {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /docs/ {
+		rewrite * /docs.html
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /models/ {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /privacy {
+		rewrite * /privacy.html
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /terms {
+		rewrite * /terms.html
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /robots.txt {
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /sitemap.xml {
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /404 {
+		rewrite * /404.html
+		root * /srv/hermes-portal
+		file_server
+	}
+
+	handle /orders* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /plans* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /favicon.ico {
+		respond 204
+	}
+
+	handle /assets/* {
+		respond 404
+	}
+	handle /logo.png {
+		respond 404
+	}
+	handle /api {
+		respond 404
+	}
+	handle /api/* {
+		respond 404
+	}
+
+	handle /setup/* {
+		respond 404
+	}
+	handle /users/* {
+		respond 404
+	}
+	handle /auth/* {
+		respond 404
+	}
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:18182 {
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
+
+	handle /status* {
+		respond 404
+	}
+
+	handle /relay* {
+		respond 404
+	}
+
+	handle /keys* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /user-detail* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /rollback* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /api-logs* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /mail-logs* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /export.csv* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /admin-console* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /admin-usage* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /admin-update* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	# Version dropdown checks update status lazily after login.
+	handle /version-status* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /risk* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /users-admin* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /usage* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /billing* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /monitor* {
+		respond 404
+	}
+	handle /subscriptions* {
+		respond 404
+	}
+	handle /redeem* {
+		respond 404
+	}
+	handle /onboarding* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /healthz* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /changelog* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /notifications* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /announcements* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /profile* {
+		reverse_proxy 127.0.0.1:18180
+	}
+
+	handle /send-code* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /forgot* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /register* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /login* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /logout* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /home* {
+		rewrite * /index.html
+		root * /srv/hermes-portal
+		file_server
+	}
+	handle /dashboard* {
+		reverse_proxy 127.0.0.1:18180
+	}
+
+	handle /console* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /app* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle /portal* {
+		reverse_proxy 127.0.0.1:18180
+	}
+	handle {
+		error 404
+	}
+
+	handle_errors {
+		@notfound expression `{err.status_code} == 404`
+		handle @notfound {
+			rewrite * /404.html
+			root * /srv/hermes-portal
+			file_server
+		}
+	}
+}
+
+dh.ahner.cn {
+	root * /srv/dh-nav
+	file_server {
+		index index.html
+	}
+}
+
