@@ -23,6 +23,8 @@ PACKAGE_FILES = [
     "services/xapi-data/xapi_data_api.py",
     "services/xapi-v1-wrapper/xapi_v1_wrapper.py",
     "services/xapi-v1-wrapper/gateway_core.py",
+    "services/xapi-v1-wrapper/provider_adapter.py",
+    "services/xapi-v1-wrapper/usage_wallet.py",
     "services/xapi-v1-wrapper/README.md",
     "services/hermes-portal/index.html",
     "services/dh-nav/index.html",
@@ -32,8 +34,6 @@ PACKAGE_FILES = [
     "systemd/xapi-portal.env.example",
     "scripts/deploy-aliyun.sh",
     "scripts/deploy-sub2api-host.sh",
-    "scripts/preview_release_update.py",
-    "scripts/deploy-preview-package.sh",
     "scripts/bootstrap-working-copy.sh",
     "README.md",
 ]

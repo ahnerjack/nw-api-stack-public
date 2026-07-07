@@ -1508,30 +1508,32 @@ console.log(res.choices[0].message.content);</pre></div>
         start=qs.get('start',[today])[0].strip() or today
         end=qs.get('end',[today])[0].strip() or today
         q=qs.get('q',[''])[0].strip().lower()
+        ds=day_start(start) or 0; de=(day_start(end) or ds)+86400
         con=db()
-        rows=con.execute('SELECT id,email,sub2_user_id,role,status,created_at FROM users WHERE status!="deleted" ORDER BY id').fetchall()
+        where='WHERE u.status!="deleted"'; params=[]
+        if q:
+            where+=' AND lower(u.email) LIKE ?'; params.append('%'+q+'%')
+        rows=con.execute('''SELECT u.id,u.email,u.role,u.status,u.sub2_user_id,
+          COALESCE(count(e.id),0) req,COALESCE(sum(e.prompt_tokens),0) input_tokens,
+          COALESCE(sum(e.completion_tokens),0) output_tokens,COALESCE(sum(e.total_tokens),0) total_tokens,
+          COALESCE(sum(e.total_usd_micros),0) cost_micros,COALESCE(w.balance_usd_micros,0) wallet_micros
+          FROM users u LEFT JOIN nw_usage_events e ON e.user_id=u.id AND e.created_at>=? AND e.created_at<?
+          LEFT JOIN nw_wallets w ON w.user_id=u.id '''+where+''' GROUP BY u.id ORDER BY cost_micros DESC''',[ds,de]+params).fetchall()
+        providers=con.execute('SELECT name,kind,status,priority FROM nw_providers ORDER BY priority,id').fetchall()
+        ledger_recent=con.execute('SELECT l.created_at,u.email,l.kind,l.amount_usd_micros,l.balance_after_usd_micros,l.request_id FROM nw_wallet_ledger l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 20').fetchall()
         con.close()
-        data=[]
-        totals={'cost':0.0,'req':0,'input':0,'output':0,'cache':0,'total_tokens':0}
+        totals={'cost_micros':0,'req':0,'input':0,'output':0,'total_tokens':0}
         for r in rows:
-            if q and q not in (r['email'] or '').lower(): continue
-            try:
-                st=api_get('/stats?start='+urllib.parse.quote(start)+'&end='+urllib.parse.quote(end), r['sub2_user_id'])
-                t=st.get('total') or []
-                cost=float(t[0] or 0) if len(t)>0 else 0.0; req=int(float(t[1] or 0)) if len(t)>1 else 0
-                total_tokens=int(float(t[3] or 0)) if len(t)>3 else 0; input_tokens=int(float(t[5] or 0)) if len(t)>5 else 0
-                output_tokens=int(float(t[6] or 0)) if len(t)>6 else 0; cache_tokens=int(float(t[7] or 0)) if len(t)>7 else 0
-            except Exception:
-                cost=0.0; req=0; total_tokens=0; input_tokens=0; output_tokens=0; cache_tokens=0
-            totals['cost']+=cost; totals['req']+=req; totals['input']+=input_tokens; totals['output']+=output_tokens; totals['cache']+=cache_tokens; totals['total_tokens']+=total_tokens
-            data.append((r['id'],r['email'],r['role'],r['status'],r['sub2_user_id'],cost,req,input_tokens,cache_tokens,output_tokens,total_tokens))
-        data.sort(key=lambda x:x[5], reverse=True)
+            totals['cost_micros']+=int(r['cost_micros'] or 0); totals['req']+=int(r['req'] or 0); totals['input']+=int(r['input_tokens'] or 0); totals['output']+=int(r['output_tokens'] or 0); totals['total_tokens']+=int(r['total_tokens'] or 0)
         def nfmt(v):
             try: return f'{int(v):,}'
             except Exception: return esc(v)
-        trs=''.join([f'<tr><td>{x[0]}</td><td><a href="/user-detail?id={x[0]}">{esc(x[1])}</a><br><span class="muted">用户编号 {x[4]} · {esc(x[2])}/{esc(x[3])}</span></td><td>{fmt_usd_as_rmb(x[5])}<br><span class="muted">${fmt_price(x[5])}</span></td><td>{nfmt(x[6])}</td><td>{nfmt(x[7])}</td><td>{nfmt(x[8])}</td><td>{nfmt(x[9])}</td><td>{nfmt(x[10])}</td></tr>' for x in data])
-        if not trs: trs='<tr><td colspan="8" class="muted">无数据</td></tr>'
-        body=f'''<div class="grid"><div class="card"><div class="k">实际消耗</div><div class="num">{fmt_usd_as_rmb(totals['cost'])}</div><p class="muted">${fmt_price(totals['cost'])}</p></div><div class="card"><div class="k">请求数</div><div class="num">{nfmt(totals['req'])}</div></div><div class="card"><div class="k">总 Token</div><div class="num">{nfmt(totals['total_tokens'])}</div></div><div class="card"><div class="k">输入/缓存/输出</div><div class="num" style="font-size:17px">{nfmt(totals['input'])} / {nfmt(totals['cache'])} / {nfmt(totals['output'])}</div></div></div><div class="card"><form method="get" class="actions"><input name="start" type="date" value="{esc(start)}"><input name="end" type="date" value="{esc(end)}"><input name="q" placeholder="邮箱搜索" value="{esc(q)}"><button class="btn">查询</button><a class="btn btn2" href="/admin-usage">今天</a></form><p class="muted">按后台实际扣费记录汇总；金额按 1 USD = 7 RMB 折算。输入/缓存/输出分别对应输入、缓存读取、输出 token。</p></div><div class="card"><table><tr><th>门户ID</th><th>账号</th><th>实际消耗</th><th>请求</th><th>输入Token</th><th>缓存Token</th><th>输出Token</th><th>总Token</th></tr>{trs}</table></div>'''
+        def micros(v):
+            return '$'+fmt_price(float(v or 0)/1000000.0)
+        trs=''.join([f'<tr><td>{x["id"]}</td><td><a href="/user-detail?id={x["id"]}">{esc(x["email"])}</a><br><span class="muted">NW 自有账本 · {esc(x["role"])}/{esc(x["status"])}</span></td><td>{micros(x["cost_micros"])}<br><span class="muted">钱包 {micros(x["wallet_micros"])}</span></td><td>{nfmt(x["req"])}</td><td>{nfmt(x["input_tokens"])}</td><td>{nfmt(x["output_tokens"])}</td><td>{nfmt(x["total_tokens"])}</td></tr>' for x in rows]) or '<tr><td colspan="7" class="muted">无 NW 自有用量</td></tr>'
+        provider_rows=''.join([f'<tr><td>{esc(p["name"])}</td><td>{esc(p["kind"])}</td><td>{esc(p["status"])}</td><td>{esc(p["priority"])}</td></tr>' for p in providers]) or '<tr><td colspan="4" class="muted">暂无 provider</td></tr>'
+        ledger_rows=''.join([f'<tr><td>{time.strftime("%F %T",time.localtime(x[0]))}</td><td>{esc(x[1])}</td><td>{esc(x[2])}</td><td>{micros(x[3])}</td><td>{micros(x[4])}</td><td><code>{esc(x[5])}</code></td></tr>' for x in ledger_recent]) or '<tr><td colspan="6" class="muted">暂无钱包流水</td></tr>'
+        body=f'''<div class="grid"><div class="card"><div class="k">NW 影子消耗</div><div class="num">{micros(totals['cost_micros'])}</div></div><div class="card"><div class="k">NW 请求数</div><div class="num">{nfmt(totals['req'])}</div></div><div class="card"><div class="k">总 Token</div><div class="num">{nfmt(totals['total_tokens'])}</div></div><div class="card"><div class="k">输入/输出</div><div class="num" style="font-size:17px">{nfmt(totals['input'])} / {nfmt(totals['output'])}</div></div></div><div class="card"><form method="get" class="actions"><input name="start" type="date" value="{esc(start)}"><input name="end" type="date" value="{esc(end)}"><input name="q" placeholder="邮箱搜索" value="{esc(q)}"><button class="btn">查询</button><a class="btn btn2" href="/admin-usage">今天</a></form><p class="muted">这里显示 NW-API 自有 usage_events / wallet_ledger / providers；当前为 shadow billing，不影响正式真实余额。</p></div><div class="card"><h2>NW 自有用量</h2><table><tr><th>ID</th><th>账号</th><th>消耗/钱包</th><th>请求</th><th>输入Token</th><th>输出Token</th><th>总Token</th></tr>{trs}</table></div><div class="card"><h2>Provider Adapter</h2><table><tr><th>名称</th><th>类型</th><th>状态</th><th>优先级</th></tr>{provider_rows}</table></div><div class="card"><h2>钱包账本最近20条</h2><table><tr><th>时间</th><th>用户</th><th>类型</th><th>金额</th><th>余额后</th><th>Request ID</th></tr>{ledger_rows}</table></div>'''
         self.sendh(shell('账号消耗统计',body,dict(u),'admin_usage'))
 
     def api_logs(self,u):
