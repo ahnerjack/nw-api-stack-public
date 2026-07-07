@@ -375,7 +375,10 @@ def price_rows():
     except Exception:
         pass
     rows=con.execute('SELECT model,input_price,output_price,cache_price,image_price,note FROM model_prices ORDER BY CASE model WHEN "gpt-5.5" THEN 1 WHEN "gpt-5.4" THEN 2 WHEN "gpt-5.4-mini" THEN 3 ELSE 99 END, model').fetchall()
-    meta=con.execute('SELECT source,unit,synced_at,upstream_updated_at,status,error FROM model_price_sync WHERE id=1').fetchone()
+    try:
+        meta=con.execute('SELECT source,unit,synced_at,upstream_updated_at,status,error FROM model_price_sync WHERE id=1').fetchone()
+    except sqlite3.OperationalError:
+        meta=None
     con.close(); return rows,meta
 
 def log_mail(recipient, subject, typ, status, error=''):
@@ -627,7 +630,7 @@ class H(BaseHTTPRequestHandler):
         if path=='/forgot/reset': return self.forgot_reset(f)
         u=current(self)
         if not u: return self.redirect('/login')
-        sensitive_paths={'/users-admin/update','/users-admin/delete','/users-admin/plan','/users-admin/models','/balance/change','/notifications/send'}
+        sensitive_paths={'/users-admin/update','/users-admin/delete','/users-admin/plan','/users-admin/models','/balance/change','/notifications/send','/pricing/update'}
         if path in sensitive_paths and not require_sensitive(u,f): return self.sendh(shell('二次确认失败','<div class="card err">敏感操作需要有效 CSRF、管理员密码和操作备注。</div>',u),403)
         if path=='/profile/password':
             if f.get('csrf')!=u.get('csrf'): return self.sendh(shell('个人资料','<div class="card err">安全校验失败，请重新提交。</div>',u,'profile'),403)
@@ -1171,7 +1174,7 @@ class H(BaseHTTPRequestHandler):
         form=''
         if u['role']=='admin':
             opts=''.join([f'<option value="{esc(x[0])}">{esc(x[0])}</option>' for x in rows])
-            form=f'<div class="card"><h2>编辑价格</h2><p class="muted">主价格源为后台价格配置；本页金额单位为人民币 / M Token。这里的手工编辑会在下次同步时被后台配置覆盖。</p><form method="post" action="/pricing/update" class="actions"><select name="model">{opts}</select><input name="input_price" placeholder="输入/M"><input name="output_price" placeholder="输出/M"><input name="cache_price" placeholder="缓存/M"><input name="image_price" placeholder="图片"><input name="note" placeholder="说明"><button class="btn">保存</button></form></div>'
+            form=f'<div class="card"><h2>编辑价格</h2><p class="muted">主价格源为后台价格配置；本页金额单位为人民币 / M Token。价格修改属于敏感操作，需要管理员密码和操作备注；手工编辑会在下次同步时被后台配置覆盖。</p><form method="post" action="/pricing/update" class="actions">{sensitive_fields(u,"价格修改备注")}<select name="model">{opts}</select><input name="input_price" placeholder="输入/M"><input name="output_price" placeholder="输出/M"><input name="cache_price" placeholder="缓存/M"><input name="image_price" placeholder="图片"><input name="note" placeholder="说明"><button class="btn">保存</button></form></div>'
         synced=time.strftime('%F %T',time.localtime(meta['synced_at'])) if meta and meta['synced_at'] else '未同步'
         explain=f'<div class="card"><h2>计价说明</h2><p>价格以每百万 Token 展示，自动同步自后台价格配置；最终扣费以控制台流水为准。</p><p class="muted">最近同步：{esc(synced)}；上游更新时间：{esc(meta["upstream_updated_at"] if meta else "")}</p></div>'
         self.sendh(shell('价格表',form+explain+f'<div class="card"><table><tr><th>模型</th><th>输入/M</th><th>输出/M</th><th>缓存/M</th><th>图片</th><th>说明</th></tr>{trs}</table></div>',u,'pricing'))
