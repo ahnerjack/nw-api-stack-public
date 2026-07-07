@@ -5,68 +5,57 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>接入文档 · NW-API</title>
 <style>
-:root{
-  --bg:#07111f;
-  --bg2:#0f172a;
-  --ink:#0f172a;
-  --muted:#64748b;
-  --line:#dbe4f0;
-  --panel:#ffffff;
-  --soft:#f6f8fc;
-  --brand:#2563eb;
-  --brand2:#4f46e5;
-  --cyan:#0ea5e9;
-  --ok:#10b981;
-  --shadow:0 22px 70px rgba(15,23,42,.10);
-  --font:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",Arial,sans-serif;
-  --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
-}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;text-rendering:optimizeLegibility}
-body{margin:0;font-family:var(--font);font-size:15px;line-height:1.7;color:var(--ink);background:linear-gradient(180deg,#eef5ff 0%,#f7faff 42%,#f8fafc 100%)}
-a{color:inherit;text-decoration:none}.wrap{width:min(1160px,calc(100% - 48px));margin:0 auto}.topbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.84);backdrop-filter:blur(18px);border-bottom:1px solid rgba(219,228,240,.82)}.nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:flex;align-items:center;gap:12px;font-weight:900;color:#0f172a}.mark{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#0f172a,#2563eb 58%,#4f46e5);box-shadow:0 14px 32px rgba(37,99,235,.24)}.brand small{display:block;font-size:12px;color:var(--muted);font-weight:700;margin-top:-3px}.links{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}.links a{padding:9px 12px;border-radius:999px;color:#475569;font-size:14px;font-weight:750}.links a:hover,.links a.on{background:#eff6ff;color:#1d4ed8}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 17px;border-radius:999px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff!important;font-weight:850;box-shadow:0 16px 36px rgba(37,99,235,.22)}.btn.secondary{background:#fff;color:#1e293b!important;border:1px solid var(--line);box-shadow:none}.hero{padding:70px 0 38px;display:grid;grid-template-columns:minmax(0,1.04fr) minmax(340px,.96fr);gap:34px;align-items:center}.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:999px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:13px;font-weight:850}.hero h1{font-size:clamp(40px,5vw,64px);line-height:1.02;letter-spacing:-.06em;margin:18px 0 14px;color:#0f172a}.hero p{max-width:620px;color:#475569;font-size:18px}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}.console{background:#0b1220;color:#dbeafe;border-radius:26px;border:1px solid rgba(148,163,184,.25);box-shadow:0 32px 80px rgba(15,23,42,.22);overflow:hidden}.console-head{height:48px;display:flex;align-items:center;gap:7px;padding:0 16px;border-bottom:1px solid rgba(148,163,184,.16);background:#111827}.dot{width:10px;height:10px;border-radius:50%;background:#fb7185}.dot:nth-child(2){background:#fbbf24}.dot:nth-child(3){background:#34d399}.console pre{margin:0;padding:20px;white-space:pre-wrap;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.85;color:#bfdbfe}.console b{color:#93c5fd}.section{padding:36px 0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.card{background:rgba(255,255,255,.94);border:1px solid rgba(219,228,240,.92);border-radius:24px;padding:24px;box-shadow:var(--shadow)}.card h2,.card h3{margin:0 0 10px;letter-spacing:-.03em}.card p{margin:0;color:#64748b}.tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:850;margin-bottom:12px}.step{display:flex;gap:14px}.num{flex:0 0 auto;width:34px;height:34px;border-radius:12px;display:grid;place-items:center;background:#eff6ff;color:#1d4ed8;font-weight:900}.code{background:#0b1220;color:#dbeafe;border-radius:18px;padding:16px;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.75}.note{border-left:4px solid var(--brand);background:#eff6ff;border-radius:16px;padding:16px;color:#334155}.cta{margin:36px 0 54px;background:linear-gradient(135deg,#0f172a,#1e1b4b);border-radius:28px;padding:30px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:20px}.cta p{color:#cbd5e1;margin:4px 0 0}.footer{border-top:1px solid rgba(219,228,240,.9);padding:30px 0 42px;color:#64748b;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.footer a{margin-left:14px;color:#475569}@media(max-width:900px){.nav{height:auto;padding:14px 0;align-items:flex-start;flex-direction:column}.links{justify-content:flex-start}.hero{grid-template-columns:1fr;padding-top:42px}.grid,.grid.two{grid-template-columns:1fr}.cta{align-items:flex-start;flex-direction:column}}@media(max-width:560px){.wrap{width:min(100% - 28px,1160px)}.hero h1{font-size:38px}.links a{padding:7px 8px}.console{border-radius:20px}.card{border-radius:20px;padding:20px}.footer a{margin:0 12px 0 0}}
+:root{--brand:#0891b2;--brand2:#4f46e5;--ink:#111827;--muted:#64748b;--line:#e5e7eb;--soft:#f6f8fc;--panel:#ffffff;--dark:#07111f;--shadow:0 14px 42px rgba(15,23,42,.07);--font:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",Arial,sans-serif;--mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-rendering:optimizeLegibility}body{margin:0;font-family:var(--font);font-size:14px;font-weight:400;background:linear-gradient(180deg,#f6fbff 0%,#edf4ff 52%,#f8fafc 100%);color:var(--ink);line-height:1.62;letter-spacing:.01em}a{color:inherit;text-decoration:none}.layout{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:100vh;width:100%}.side{background:linear-gradient(180deg,#07111f 0%,#0f172a 58%,#111827 100%);color:#dbeafe;padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}.logo{display:flex;gap:10px;align-items:center;color:#fff;margin-bottom:22px}.mark{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#0f172a,#2563eb 58%,#4f46e5);box-shadow:0 14px 32px rgba(37,99,235,.28);font-weight:900}.brand-name{font-size:18px;font-weight:900}.brand-copy small{display:block;color:#93a4bd;font-size:12px;margin-top:-2px}.nav-title{font-size:12px;color:#93a4bd;font-weight:800;margin:18px 8px 8px;text-transform:uppercase;letter-spacing:.08em}.nav a{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;color:#cbd5e1;font-weight:750;margin:3px 0}.nav a:hover,.nav a.on{background:rgba(255,255,255,.09);color:#fff}.nav .sub{font-size:13px;padding-left:22px;color:#aab8cc}.main{padding:30px;max-width:1180px;width:100%;margin:0 auto}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:18px}.top h1{font-size:34px;line-height:1.08;margin:0 0 8px;letter-spacing:-.04em}.muted{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 16px;border-radius:999px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff!important;font-weight:850;box-shadow:0 14px 28px rgba(37,99,235,.18)}.btn.btn2{background:#fff;color:#1f2937!important;border:1px solid var(--line);box-shadow:none}.doc-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.card{background:rgba(255,255,255,.96);border:1px solid rgba(226,232,240,.96);border-radius:22px;padding:22px;box-shadow:var(--shadow)}.card h2{font-size:22px;margin:0 0 12px;letter-spacing:-.03em}.card h3{font-size:16px;margin:18px 0 8px}.card p{margin:8px 0;color:#475569}.pill{display:inline-flex;padding:6px 10px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-weight:850;font-size:12px}.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.step{border:1px solid #e5e7eb;background:#f8fafc;border-radius:16px;padding:14px}.step b{display:block;margin-bottom:6px}.code{background:#0b1220;color:#dbeafe;border-radius:16px;padding:16px;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.75;white-space:pre}.note{border-left:4px solid #2563eb;background:#eff6ff;border-radius:14px;padding:14px;color:#334155}.table{width:100%;border-collapse:collapse;overflow:hidden}.table th,.table td{text-align:left;border-bottom:1px solid #edf2f7;padding:10px 8px;vertical-align:top}.table th{font-size:12px;color:#64748b}.footer{margin-top:22px;color:#64748b;font-size:13px}.footer a{margin-right:14px;color:#475569}@media(max-width:900px){.layout{grid-template-columns:1fr}.side{position:relative;height:auto}.main{padding:22px}.steps{grid-template-columns:1fr}.top{flex-direction:column}.nav a.sub{display:none}}@media(max-width:560px){.main{padding:16px}.card{border-radius:18px;padding:18px}.top h1{font-size:28px}}
 </style>
 </head>
 <body>
-<header class="topbar"><div class="wrap nav"><a class="brand" href="/home"><span class="mark">N</span><span>NW-API<small>统一 API 网关</small></span></a><nav class="links"><a href="/pricing">价格</a><a href="/plans">套餐</a><a href="/risk">风控</a><a class="on" href="/docs">文档</a><a href="/models">模型</a><a href="/privacy">隐私</a><a href="/terms">条款</a><a class="btn" href="/login">控制台</a></nav></div></header>
-<main>
-  <section class="wrap hero">
-    <div><span class="eyebrow">接入文档 · 标准 /v1 接口</span><h1>把现有应用接入 NW-API。</h1><p>使用兼容主流 SDK 的调用方式，统一管理 Key、模型权限、用量记录和风控策略。公开文档只展示必要接入信息，具体额度和可用模型以控制台为准。</p><div class="hero-actions"><a class="btn" href="/login">进入控制台创建 Key</a><a class="btn secondary" href="/models">查看可用模型</a></div></div>
-    <div class="console"><div class="console-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><pre>curl https://of.ahner.cn/v1/models \
-  -H "Authorization: Bearer YOUR_API_KEY"
-
-# Chat Completions
-curl https://of.ahner.cn/v1/chat/completions \
+<div class="layout">
+  <aside class="side">
+    <a class="logo" href="/home"><span class="mark">N</span><span class="brand-copy"><span class="brand-name">NW-API</span><small>统一 API 网关</small></span></a>
+    <div class="nav">
+      <div class="nav-title">站点</div>
+      <a href="/home">首页</a><a href="/pricing">价格</a><a href="/models">模型</a><a href="/risk">风控</a>
+      <div class="nav-title">文档目录</div>
+      <a class="on" href="#overview">接入概览</a><a class="sub" href="#quickstart">快速开始</a><a class="sub" href="#auth">鉴权</a><a class="sub" href="#sdk">SDK 示例</a><a class="sub" href="#models">模型与权限</a><a class="sub" href="#errors">错误与排查</a><a class="sub" href="#security">安全建议</a>
+      <div class="nav-title">账号</div>
+      <a href="/login">控制台</a><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="top"><div><span class="pill">标准 /v1 接口</span><h1>接入文档</h1><div class="muted">左侧为文档目录，右侧为接入说明、示例和排查规则。</div></div><a class="btn btn2" href="/risk">查看风控规则</a></div>
+    <section class="doc-grid">
+      <div id="overview" class="card"><h2>接入概览</h2><p>NW-API 提供统一的 <strong>/v1</strong> API 入口，用于管理 API Key、模型权限、用量统计、余额和风控策略。生产接入前建议先创建测试 Key，小流量验证返回格式和错误处理。</p><div class="steps"><div class="step"><b>1. 创建 Key</b><span class="muted">登录控制台创建并保存访问凭证。</span></div><div class="step"><b>2. 替换地址</b><span class="muted">把 SDK Base URL 设置为平台 /v1 地址。</span></div><div class="step"><b>3. 查看用量</b><span class="muted">在控制台查看调用、余额、Token 和异常。</span></div></div></div>
+      <div id="quickstart" class="card"><h2>快速开始</h2><p>Base URL：</p><div class="code">https://of.ahner.cn/v1</div><h3>查看模型</h3><div class="code">curl https://of.ahner.cn/v1/models \
+  -H "Authorization: Bearer YOUR_API_KEY"</div><h3>发送对话请求</h3><div class="code">curl https://of.ahner.cn/v1/chat/completions \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"请在控制台选择","messages":[{"role":"user","content":"hello"}]}'</pre></div>
-  </section>
-  <section class="wrap section"><div class="grid"><div class="card step"><div class="num">1</div><div><h3>创建 Key</h3><p>登录控制台创建 API Key。完整 Key 只在创建或查看时展示，请勿放入公开仓库、截图或前端代码。</p></div></div><div class="card step"><div class="num">2</div><div><h3>替换 Base URL</h3><p>把 SDK 的 Base URL 设置为 <strong>https://of.ahner.cn/v1</strong>，其余调用方式保持兼容。</p></div></div><div class="card step"><div class="num">3</div><div><h3>查看用量</h3><p>在控制台查看请求、Token、余额、Key 状态和异常提示；生产接入前先做小流量验证。</p></div></div></div></section>
-  <section class="wrap section"><div class="grid two"><div class="card"><span class="tag">Python</span><h2>SDK 示例</h2><div class="code">from openai import OpenAI
+  -d '{"model":"请在控制台选择","messages":[{"role":"user","content":"hello"}]}'</div></div>
+      <div id="auth" class="card"><h2>鉴权</h2><p>所有 API 请求都需要携带：</p><div class="code">Authorization: Bearer YOUR_API_KEY</div><p>Key 被禁用、余额不足、模型未授权、额度不足或触发风控时，请求会返回明确错误。请不要把完整 Key 放在浏览器前端、公开仓库、截图、日志或工单中。</p></div>
+      <div id="sdk" class="card"><h2>SDK 示例</h2><h3>Python</h3><div class="code">from openai import OpenAI
 client = OpenAI(
     base_url="https://of.ahner.cn/v1",
     api_key="YOUR_API_KEY",
 )
-
 res = client.chat.completions.create(
     model="请在控制台选择",
     messages=[{"role":"user","content":"hello"}],
 )
-print(res.choices[0].message.content)</div></div><div class="card"><span class="tag">Node.js</span><h2>SDK 示例</h2><div class="code">import OpenAI from "openai";
-
+print(res.choices[0].message.content)</div><h3>Node.js</h3><div class="code">import OpenAI from "openai";
 const client = new OpenAI({
   baseURL: "https://of.ahner.cn/v1",
   apiKey: process.env.NW_API_KEY,
 });
-
 const res = await client.chat.completions.create({
   model: "请在控制台选择",
   messages: [{ role: "user", content: "hello" }],
-});</div></div></div></section>
-  <section class="wrap section"><div class="grid"><div class="card"><h3>鉴权</h3><p>每个请求使用 <code>Authorization: Bearer YOUR_API_KEY</code>。Key 被禁用、余额不足或模型未授权时会返回明确错误。</p></div><div class="card"><h3>模型权限</h3><p>可用模型、价格和额度以控制台与模型页面为准。不同账号可能拥有不同模型范围。</p></div><div class="card"><h3>安全建议</h3><p>服务端保存 Key，避免写入客户端包、浏览器 localStorage、公开日志或工单截图。</p></div></div></section>
-  <section class="wrap section"><div class="note">常见排查顺序：确认 Key 状态 → 检查余额和额度 → 检查模型权限 → 查看控制台用量与通知 → 再联系管理员复核。</div></section>
-  <section class="wrap cta"><div><h2>准备开始接入？</h2><p>先创建 Key，再用小流量验证模型、额度和返回格式。</p></div><a class="btn" href="/login">进入控制台</a></section>
-</main>
-<footer class="wrap footer"><div><strong>NW-API</strong><br>面向生产环境的统一 API 网关</div><div><a href="/pricing">价格</a><a href="/plans">套餐</a><a href="/risk">风控</a><a href="/models">模型</a><a href="/privacy">隐私</a><a href="/terms">条款</a></div></footer>
+});</div></div>
+      <div id="models" class="card"><h2>模型与权限</h2><table class="table"><tr><th>项目</th><th>说明</th></tr><tr><td>可用模型</td><td>以控制台和模型页面为准，不同账号可能拥有不同模型范围。</td></tr><tr><td>价格</td><td>以价格页面和控制台展示为准，按用量记录和账户余额核算。</td></tr><tr><td>额度</td><td>余额、套餐、Key 状态、模型权限、并发和风控策略会共同影响调用。</td></tr></table></div>
+      <div id="errors" class="card"><h2>错误与排查</h2><p>建议按以下顺序排查：</p><div class="note">确认 Key 状态 → 检查余额和额度 → 检查模型权限 → 查看控制台用量与通知 → 复核请求路径和参数 → 联系管理员。</div><h3>常见原因</h3><p>Key 无效、余额不足、模型未授权、超过并发/额度限制、请求过快、异常路径、违反服务条款或上游临时不可用。</p></div>
+      <div id="security" class="card"><h2>安全建议</h2><p>服务端保存 Key，客户端只调用自己的后端。定期轮换 Key，发现泄露立即禁用。生产环境应记录请求 ID、错误码和必要上下文，但不要记录完整 Key 或敏感业务内容。</p><div class="steps"><a class="btn" href="/login">进入控制台</a><a class="btn btn2" href="/models">查看模型</a><a class="btn btn2" href="/pricing">查看价格</a></div></div>
+    </section>
+    <div class="footer"><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a><a href="/home">返回首页</a></div>
+  </main>
+</div>
 </body>
 </html>
