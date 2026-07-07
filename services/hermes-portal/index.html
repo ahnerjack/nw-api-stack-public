@@ -1,10 +1,82 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NW-API</title><style>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NW-API</title>
+<style>
 :root{
-  --bg:#070b16;--bg2:#0b1020;--ink:#ecf3ff;--muted:#97a6ba;--line:rgba(148,163,184,.18);
-  --panel:rgba(255,255,255,.075);--panel2:rgba(255,255,255,.11);--brand:#6ee7ff;--brand2:#8b5cf6;--ok:#34d399;--warn:#fbbf24;
+  --bg:#07111f;
+  --bg2:#0f172a;
+  --ink:#f8fafc;
+  --muted:#94a3b8;
+  --line:rgba(148,163,184,.18);
+  --brand:#38bdf8;
+  --brand2:#6366f1;
+  --panel:#ffffff;
+  --panel-soft:#f8fafc;
+  --text:#0f172a;
+  --text2:#64748b;
+  --shadow:0 14px 36px rgba(15,23,42,.07);
 }
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.65}a{color:inherit;text-decoration:none}.site{min-height:100vh;background:radial-gradient(circle at 18% 8%,rgba(110,231,255,.20),transparent 32%),radial-gradient(circle at 84% 16%,rgba(139,92,246,.28),transparent 28%),linear-gradient(180deg,#070b16 0%,#10172a 52%,#f5f7fb 52%,#eef3ff 100%)}.wrap{width:min(1180px,calc(100% - 44px));margin:0 auto}.nav{position:sticky;top:0;z-index:30;background:rgba(7,11,22,.72);backdrop-filter:blur(22px);border-bottom:1px solid var(--line)}.nav-inner{height:74px;display:flex;align-items:center;justify-content:space-between;gap:22px}.brand{display:flex;align-items:center;gap:12px;font-weight:900}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:grid;place-items:center;color:#06101f;box-shadow:0 18px 48px rgba(110,231,255,.22)}.brand small{display:block;color:var(--muted);font-size:12px;margin-top:-3px}.links{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}.links a{padding:9px 12px;border-radius:999px;color:#cbd5e1;font-weight:760;font-size:14px}.links a:hover{background:rgba(255,255,255,.09);color:white}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:999px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#06101f!important;font-weight:900;border:0;box-shadow:0 18px 40px rgba(110,231,255,.22)}.btn.ghost,.ghost{background:rgba(255,255,255,.08);color:#fff!important;border:1px solid rgba(255,255,255,.18);box-shadow:none}.hero{padding:86px 0 56px;display:grid;grid-template-columns:minmax(0,1.04fr) minmax(360px,.96fr);gap:42px;align-items:center}.eyebrow{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid rgba(110,231,255,.28);background:rgba(110,231,255,.08);border-radius:999px;color:#bff6ff;font-weight:850;font-size:13px}.hero h1{font-size:clamp(44px,6vw,74px);line-height:.95;letter-spacing:-.07em;margin:22px 0 18px}.hero p{font-size:18px;color:#b9c4d6;max-width:620px}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.terminal{position:relative;background:rgba(2,6,23,.74);border:1px solid rgba(148,163,184,.22);border-radius:28px;padding:18px;box-shadow:0 30px 90px rgba(0,0,0,.36);overflow:hidden}.terminal:before{content:"";position:absolute;inset:-1px;background:linear-gradient(135deg,rgba(110,231,255,.28),rgba(139,92,246,.12),transparent);pointer-events:none}.dots{display:flex;gap:7px;margin-bottom:14px}.dots i{width:10px;height:10px;border-radius:50%;background:#fb7185}.dots i:nth-child(2){background:#fbbf24}.dots i:nth-child(3){background:#34d399}pre{position:relative;margin:0;white-space:pre-wrap;color:#d9f99d;font-size:13px;line-height:1.8}.section{padding:56px 0}.section.light{color:#0f172a}.section.light .muted{color:#64748b}.section h2{font-size:clamp(30px,4vw,48px);letter-spacing:-.05em;line-height:1.08;margin:0 0 14px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.card{border:1px solid rgba(15,23,42,.08);background:rgba(255,255,255,.9);border-radius:28px;padding:26px;box-shadow:0 24px 70px rgba(15,23,42,.08);color:#0f172a}.dark-card{background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.13);color:white;box-shadow:0 22px 80px rgba(0,0,0,.22)}.card h3,.card h2{margin-top:0}.metric{font-size:34px;font-weight:950;letter-spacing:-.04em}.cta{background:linear-gradient(135deg,#0f172a,#1e1b4b);color:#fff;border-radius:36px;padding:34px;border:1px solid rgba(255,255,255,.10);display:flex;justify-content:space-between;gap:24px;align-items:center}.footer{padding:34px 0 42px;color:#64748b;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.footer a{margin-right:14px}.pill{display:inline-flex;padding:6px 10px;border-radius:999px;background:#ecfeff;color:#0369a1;font-weight:850;font-size:12px}@media(max-width:900px){.hero{grid-template-columns:1fr;padding-top:54px}.grid{grid-template-columns:1fr}.nav-inner{height:auto;padding:14px 0;align-items:flex-start;flex-direction:column}.links{justify-content:flex-start}.cta{align-items:flex-start;flex-direction:column}}@media(max-width:560px){.wrap{width:min(100% - 26px,1180px)}.hero h1{font-size:42px}.links a{padding:7px 8px}.terminal{border-radius:20px}.card{border-radius:22px;padding:20px}}
-</style></head><body><div class="site"><header class="nav"><div class="wrap nav-inner"><a class="brand" href="/home"><span class="logo">N</span><span>NW-API<small>OpenAI-compatible API</small></span></a><nav class="links"><a href="/pricing">价格</a><a href="/plans">套餐</a><a href="/risk">风控</a><a href="/docs">文档</a><a href="/models">模型</a><a href="/privacy">隐私</a><a href="/terms">条款</a><a href="/login">控制台</a></nav></div></header><main class="wrap hero"><section><span class="eyebrow">OpenAI-compatible · Unified Gateway</span><h1>把多模型能力，包装成一个稳定 API。</h1><p>NW-API 提供统一接入、Key 管理、用量统计、模型价格和运营风控。适合把 AI 能力接入内部系统、产品原型和正式业务。</p><div class="actions"><a class="btn" href="/login">进入控制台</a><a class="btn ghost" href="/docs">查看接入文档</a></div></section><section class="terminal"><div class="dots"><i></i><i></i><i></i></div><pre>$ curl https://of.ahner.cn/v1/chat/completions \
-  -H "Authorization: Bearer sk-..." \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-5.5","messages":[{"role":"user","content":"hello"}]}'</pre></section></main><section class="section light"><div class="wrap"><h2>商业 API 服务需要的基础能力</h2><p class="muted">从接入、计费到风控，保留必要能力，不暴露底层链路。</p><div class="grid"><div class="card"><span class="pill">Gateway</span><h3>统一接入</h3><p>兼容常见 AI SDK 和 HTTP 调用方式，业务侧只需要配置一个 Base URL。</p></div><div class="card"><span class="pill">Billing</span><h3>用量透明</h3><p>按用户、模型、Token 和影子账本追踪，支持统计、筛选与审计。</p></div><div class="card"><span class="pill">Control</span><h3>运营可控</h3><p>套餐、价格、通知、风控规则集中管理，适合小团队快速上线。</p></div></div></div></section><section class="section light"><div class="wrap cta"><div><h2>准备接入 NW-API？</h2><p class="muted" style="color:#cbd5e1">进入控制台创建 Key，使用 https://of.ahner.cn/v1 即可测试。</p></div><a class="btn" href="/login">打开控制台</a></div></section><footer class="wrap footer"><div><b>NW-API</b><br>面向生产环境的 AI API 平台</div><div><a href="/pricing">价格</a><a href="/plans">套餐</a><a href="/risk">风控</a><a href="/docs">文档</a><a href="/models">模型</a><a href="/privacy">隐私</a><a href="/terms">条款</a></div></footer></div></body></html>
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif;background:#f5f7fb;color:var(--text);line-height:1.65;letter-spacing:.01em}
+a{color:inherit;text-decoration:none}
+.site{min-height:100vh;background:radial-gradient(circle at 18% 8%,rgba(56,189,248,.16),transparent 32%),radial-gradient(circle at 84% 10%,rgba(99,102,241,.20),transparent 30%),linear-gradient(180deg,#07111f 0%,#0f172a 48%,#172033 61%,#f5f7fb 74%,#eef3ff 100%)}
+.wrap{width:min(1160px,calc(100% - 44px));margin:0 auto}
+.nav{position:sticky;top:0;z-index:30;background:rgba(7,17,31,.78);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
+.nav-inner{height:72px;display:flex;align-items:center;justify-content:space-between;gap:22px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:900;color:#fff}
+.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:grid;place-items:center;color:#06101f;box-shadow:0 14px 34px rgba(56,189,248,.20)}
+.brand small{display:block;color:#94a3b8;font-size:12px;margin-top:-3px;font-weight:700}
+.links{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.links a{padding:9px 12px;border-radius:999px;color:#dbeafe;font-weight:760;font-size:14px}
+.links a:hover{background:rgba(255,255,255,.09);color:#fff}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:999px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#06101f!important;font-weight:900;border:0;box-shadow:0 16px 34px rgba(56,189,248,.18)}
+.btn.ghost{background:rgba(255,255,255,.075);color:#fff!important;border:1px solid rgba(255,255,255,.18);box-shadow:none}
+.hero{padding:82px 0 54px;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(340px,.92fr);gap:42px;align-items:center;color:var(--ink)}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid rgba(148,163,184,.26);border-radius:999px;background:rgba(255,255,255,.06);color:#cbd5e1;font-size:13px;font-weight:820}
+h1{font-size:clamp(42px,6vw,78px);line-height:1.04;letter-spacing:-.04em;margin:20px 0 18px;color:#fff;max-width:860px}
+.hero p{font-size:18px;color:#cbd5e1;max-width:680px;margin:0 0 26px}
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.console-card{background:linear-gradient(180deg,rgba(15,23,42,.92),rgba(15,23,42,.76));border:1px solid rgba(148,163,184,.24);border-radius:28px;padding:24px;box-shadow:0 28px 80px rgba(2,6,23,.28)}
+.console-card .bar{height:10px;display:flex;gap:7px;margin-bottom:20px}.bar i{width:10px;height:10px;border-radius:50%;background:#64748b}.bar i:nth-child(1){background:#38bdf8}.bar i:nth-child(2){background:#818cf8}.bar i:nth-child(3){background:#22c55e}
+.metric{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric div{border:1px solid rgba(148,163,184,.18);border-radius:18px;padding:16px;background:rgba(255,255,255,.045)}
+.k{font-size:12px;color:#94a3b8;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.v{margin-top:8px;font-size:24px;font-weight:900;color:#e0f2fe}.console-card p{font-size:14px;color:#94a3b8;margin:18px 0 0}.endpoint{margin-top:16px;padding:13px 14px;border-radius:16px;background:rgba(15,23,42,.76);border:1px solid rgba(148,163,184,.18);color:#dbeafe;font-family:"SFMono-Regular",Consolas,monospace;font-size:13px;overflow:auto}
+.section{padding:58px 0}.light{color:var(--text)}.section h2{font-size:34px;line-height:1.15;letter-spacing:-.03em;margin:0 0 10px}.muted{color:var(--text2)}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:24px}.card{background:#fff;border:1px solid rgba(15,23,42,.10);border-radius:24px;padding:24px;box-shadow:var(--shadow)}.card h3{margin:14px 0 8px;font-size:20px}.card p{margin:0;color:#475569}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:900}
+.cta{display:flex;align-items:center;justify-content:space-between;gap:24px;background:linear-gradient(135deg,#0f172a,#172554);border-radius:30px;padding:32px;color:#fff;box-shadow:0 20px 50px rgba(15,23,42,.18)}.cta h2{color:#fff}.cta p{color:#cbd5e1;margin:8px 0 0}.cta .btn{color:#06101f!important}
+.footer{padding:34px 0 44px;display:flex;justify-content:space-between;gap:20px;align-items:center;color:#64748b}.footer a{margin-left:14px;color:#334155;font-weight:750}.footer a:hover{color:#0f172a}
+@media(max-width:860px){.hero{grid-template-columns:1fr;padding-top:54px}.grid{grid-template-columns:1fr}.footer,.cta{display:block}.footer a{margin:0 12px 0 0}.console-card{max-width:560px}.nav-inner{height:auto;min-height:68px;padding:12px 0;align-items:flex-start}.brand{padding-top:4px}}
+@media(max-width:560px){.wrap{width:min(100% - 28px,1160px)}.links a:nth-child(2),.links a:nth-child(3),.links a:nth-child(5),.links a:nth-child(6),.links a:nth-child(7){display:none}.hero{padding-top:36px}.console-card{display:none}h1{font-size:40px}.section{padding:42px 0}.cta{padding:24px;border-radius:24px}.nav-inner{gap:10px}.links a{padding:8px 10px;font-size:13px}}
+</style>
+</head>
+<body>
+<div class="site">
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/home"><span class="logo">N</span><span>NW-API<small>统一 API 网关</small></span></a>
+      <nav class="links"><a href="/pricing">价格</a><a href="/plans">套餐</a><a href="/risk">风控</a><a href="/docs">文档</a><a href="/models">模型</a><a href="/privacy">隐私</a><a href="/terms">条款</a><a href="/login">控制台</a></nav>
+    </div>
+  </header>
+  <main class="wrap hero">
+    <section>
+      <span class="eyebrow">统一 API 网关 · 多模型接入</span>
+      <h1>一个稳定入口，接入多模型能力。</h1>
+      <p>NW-API 提供统一接入、Key 管理、用量统计、模型价格和运营风控。适合把 AI 能力接入内部系统、产品原型和正式业务。</p>
+      <div class="actions"><a class="btn" href="/login">进入控制台创建 Key</a><a class="btn ghost" href="/docs">查看接入文档</a></div>
+    </section>
+    <section class="console-card" aria-label="平台能力概览">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="metric"><div><span class="k">Gateway</span><div class="v">统一入口</div></div><div><span class="k">Usage</span><div class="v">用量清晰</div></div><div><span class="k">Policy</span><div class="v">权限可控</div></div><div><span class="k">Ops</span><div class="v">运营审计</div></div></div>
+      <p>兼容主流 AI SDK 与 HTTP 调用方式；登录后可查看接入地址、创建 Key 并按文档完成测试。</p>
+      <div class="endpoint">Base URL：登录控制台后查看</div>
+    </section>
+  </main>
+  <section class="section light"><div class="wrap"><h2>商业 API 服务需要的基础能力</h2><p class="muted">从接入、计费到风控，保留必要能力，不暴露底层链路。</p><div class="grid"><div class="card"><span class="pill">网关</span><h3>统一接入</h3><p>兼容主流 AI SDK 和 HTTP 调用方式，业务侧只需要配置一个稳定入口。</p></div><div class="card"><span class="pill">计费</span><h3>用量透明</h3><p>按用户、模型、Token 和账单记录追踪，支持统计、筛选与审计。</p></div><div class="card"><span class="pill">管控</span><h3>运营可控</h3><p>套餐、价格、通知、风控规则集中管理，适合小团队快速上线。</p></div></div></div></section>
+  <section class="section light"><div class="wrap cta"><div><h2>准备接入 NW-API？</h2><p>登录后创建 Key，并在接入文档中获取专属 Base URL。</p></div><a class="btn" href="/login">进入控制台创建 Key</a></div></section>
+  <footer class="wrap footer"><div><b>NW-API</b><br>面向生产环境的 AI API 平台</div><div><a href="/pricing">价格</a><a href="/plans">套餐</a><a href="/risk">风控</a><a href="/docs">文档</a><a href="/models">模型</a><a href="/privacy">隐私</a><a href="/terms">条款</a></div></footer>
+</div>
+</body>
+</html>
