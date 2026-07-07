@@ -27,6 +27,7 @@ PACKAGE_FILES = [
     "services/xapi-v1-wrapper/usage_wallet.py",
     "services/xapi-v1-wrapper/README.md",
     "services/hermes-portal/index.html",
+    "services/hermes-portal/docs.html",
     "services/dh-nav/index.html",
     "systemd/xapi-portal.service",
     "systemd/xapi-data.service",
