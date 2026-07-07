@@ -5,6 +5,7 @@ Runs fully against mock xapi-data and mock upstream; no real key, no real Sub2AP
 no production network required.
 '''
 import contextlib
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -146,12 +147,16 @@ CREATE TABLE user_models(user_id INTEGER,model TEXT,enabled INTEGER);
 CREATE TABLE model_prices(model TEXT PRIMARY KEY,input_price REAL DEFAULT 0,output_price REAL DEFAULT 0,cache_price REAL DEFAULT 0,image_price REAL DEFAULT 0,note TEXT);
 CREATE TABLE risk_rules(kind TEXT,pattern TEXT,action TEXT,status TEXT,id INTEGER PRIMARY KEY AUTOINCREMENT);
 CREATE TABLE api_access_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,key_id INTEGER,ip TEXT,method TEXT,path TEXT,model TEXT,status INTEGER,error_code TEXT,latency_ms INTEGER,created_at INTEGER);
+CREATE TABLE nw_api_keys(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,name TEXT NOT NULL,key_hash TEXT NOT NULL UNIQUE,key_prefix TEXT NOT NULL,key_suffix TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',quota REAL NOT NULL DEFAULT 0,quota_used REAL NOT NULL DEFAULT 0,last_used_at INTEGER,created_at INTEGER NOT NULL,rotated_at INTEGER,deleted_at INTEGER);
 INSERT INTO users(id,email,status,sub2_user_id) VALUES(1,'u@example.com','active',101);
 INSERT INTO user_models(user_id,model,enabled) VALUES(1,'gpt-5.5',1);
 INSERT INTO model_prices(model) VALUES('gpt-5.5');
 INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
 ''')
+        nw_key = 'nwk_test_stage8_key_1234567890'
+        con.execute('INSERT INTO nw_api_keys(id,user_id,name,key_hash,key_prefix,key_suffix,status,quota,quota_used,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(51,1,'stage8',hashlib.sha256(nw_key.encode()).hexdigest(),nw_key[:7],nw_key[-4:],'active',0,0,int(time.time())))
         con.commit(); con.close()
+        cls.nw_key = nw_key
         cls.db_path = str(db_path)
         cls.data = ServerThread(MockDataHandler).start()
         cls.upstream = ServerThread(MockUpstreamHandler).start()
@@ -178,6 +183,16 @@ INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
         data = json.loads(raw)
         ids = [m['id'] for m in data['data']]
         self.assertEqual(ids, ['gpt-5.5'])
+
+    def test_models_with_nw_owned_key(self):
+        status, headers, raw = request(self.wrapper_server.url, 'GET', '/v1/models', key=self.nw_key)
+        self.assertEqual(status, 200, raw)
+        data = json.loads(raw)
+        self.assertEqual([m['id'] for m in data['data']], ['gpt-5.5'])
+        con = sqlite3.connect(self.db_path)
+        row = con.execute('SELECT last_used_at FROM nw_api_keys WHERE id=51').fetchone()
+        con.close()
+        self.assertIsNotNone(row[0])
 
     def test_missing_key(self):
         status, headers, raw = request(self.wrapper_server.url, 'GET', '/v1/models', key=None)

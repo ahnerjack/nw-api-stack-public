@@ -62,7 +62,7 @@ class IPRiskPolicy:
 
 
 class AuthPolicy:
-    def __init__(self, key_verifier: Callable[[str], Mapping[str, Any]], portal_user_loader: Callable[[int], Any]):
+    def __init__(self, key_verifier: Callable[[str], Mapping[str, Any]], portal_user_loader: Callable[[Mapping[str, Any]], Any]):
         self.key_verifier = key_verifier
         self.portal_user_loader = portal_user_loader
 
@@ -78,7 +78,7 @@ class AuthPolicy:
             return PolicyResult.deny(code, str(info.get('message') or 'Invalid API key'), 401)
         sub2_uid = int(info['user_id'])
         key_id = int(info['key_id'])
-        portal_user = self.portal_user_loader(sub2_uid)
+        portal_user = self.portal_user_loader(info)
         if not portal_user:
             return PolicyResult.deny('ACCOUNT_DISABLED', 'Account disabled', 403, sub2_uid=sub2_uid, key_id=key_id)
         return PolicyResult.allow(sub2_uid=sub2_uid, key_id=key_id, portal_user=portal_user)

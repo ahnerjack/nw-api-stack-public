@@ -44,7 +44,10 @@ CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,us
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,read_at);
 CREATE TABLE IF NOT EXISTS mail_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,recipient TEXT NOT NULL,subject TEXT NOT NULL,type TEXT,status TEXT NOT NULL,error TEXT,created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_created ON mail_logs(created_at);
-CREATE TABLE IF NOT EXISTS payment_methods(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE NOT NULL,kind TEXT NOT NULL DEFAULT 'manual',instructions TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 100,updated_at INTEGER NOT NULL);''')
+CREATE TABLE IF NOT EXISTS payment_methods(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE NOT NULL,kind TEXT NOT NULL DEFAULT 'manual',instructions TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 100,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS nw_api_keys(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,name TEXT NOT NULL,key_hash TEXT NOT NULL UNIQUE,key_prefix TEXT NOT NULL,key_suffix TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',quota REAL NOT NULL DEFAULT 0,quota_used REAL NOT NULL DEFAULT 0,last_used_at INTEGER,created_at INTEGER NOT NULL,rotated_at INTEGER,deleted_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_nw_api_keys_user ON nw_api_keys(user_id,status,deleted_at);
+CREATE INDEX IF NOT EXISTS idx_nw_api_keys_hash ON nw_api_keys(key_hash);''')
     c.execute('DELETE FROM api_access_logs WHERE created_at < ?', (int(time.time())-90*86400,))
     c.commit()
     if not c.execute('SELECT id FROM users WHERE email=?',(ADMIN_EMAIL,)).fetchone():
@@ -76,6 +79,12 @@ def mask_key(k):
     if '*' in s and len(s) <= 24: return s
     if len(s) <= 12: return (s[:3] + '******' + s[-3:]) if len(s) > 6 else '******'
     return s[:6] + '******' + s[-4:]
+
+def api_key_hash(k):
+    return hashlib.sha256(str(k or '').encode('utf-8')).hexdigest()
+
+def new_nw_key():
+    return 'nwk_' + secrets.token_urlsafe(36).replace('-', '').replace('_', '')[:48]
 
 def public_safe_text(x):
     s=str(x or '')
@@ -765,11 +774,20 @@ class H(BaseHTTPRequestHandler):
                 con.commit(); log_op(u['email'],'update_models',tu['email'],','.join(models))
             con.close(); return self.redirect('/users-admin')
         if path=='/keys/update':
-            api_post('/keys/update', {'uid':u['sub2_user_id'],'id':f.get('id'),'quota':'0','status':f.get('status','active')})
+            raw_id=str(f.get('id') or '')
+            kid=int(raw_id.split(':',1)[1]) if raw_id.startswith('nw:') else 0
+            st=f.get('status','active')
+            if kid>0:
+                con=db(); con.execute('UPDATE nw_api_keys SET status=? WHERE id=? AND user_id=? AND deleted_at IS NULL',(st,kid,u['id'])); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'NW-API Key 已更新','您的 NW-API Key #'+str(kid)+' 状态已更新。','key',int(time.time()))); con.commit(); con.close(); return self.redirect('/keys')
+            api_post('/keys/update', {'uid':u['sub2_user_id'],'id':f.get('id'),'quota':'0','status':st})
             con=db(); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'API Key 已更新','您的 API Key #'+str(f.get('id'))+' 状态/额度已更新。','key',int(time.time()))); con.commit(); con.close()
             safe_notify_mail(u['email'],'NW-API API Key 已更新',mail_body('API Key 状态变更',['Key 编号：#'+str(f.get('id')),'状态或额度已更新。','如非本人操作，请立即登录控制台禁用相关 Key 并修改密码。']),'key')
             return self.redirect('/keys')
         if path=='/keys/rotate':
+            raw_id=str(f.get('id') or '')
+            kid=int(raw_id.split(':',1)[1]) if raw_id.startswith('nw:') else 0
+            if kid>0:
+                key=new_nw_key(); con=db(); con.execute('UPDATE nw_api_keys SET key_hash=?,key_prefix=?,key_suffix=?,status="active",rotated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL',(api_key_hash(key),key[:7],key[-4:],int(time.time()),kid,u['id'])); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'NW-API Key 已轮换','您的 NW-API Key #'+str(kid)+' 已重新生成。','key',int(time.time()))); con.commit(); con.close(); return self.sendh(shell('NW-API Key 已轮换',f'<div class="card"><p>请立即复制保存，新 Key 只在这里显示一次：</p><pre id="full-key">{esc(key)}</pre><div class="actions"><button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById(\'full-key\').innerText).then(()=>this.innerText=\'已复制\')">复制完整 Key</button><a class="btn btn2" href="/keys">返回 API Key</a></div></div>',u,'keys'))
             new_key=(f.get('new_key') or '').strip()
             payload={'uid':u['sub2_user_id'],'id':f.get('id')}
             if new_key: payload['key']=new_key
@@ -808,15 +826,23 @@ class H(BaseHTTPRequestHandler):
             con.close()
             return self.redirect('/users-admin')
         if path=='/keys/create':
-            res=api_post('/keys', {'uid':u['sub2_user_id'],'name':f.get('name','NW-API Key')})
-            key=res.get('key','')
-            return self.sendh(shell('新 API Key',f'<div class="card"><p>请立即复制保存，只显示这一次：</p><pre id="full-key">{esc(key)}</pre><div class="actions"><button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById(\'full-key\').innerText).then(()=>this.innerText=\'已复制\')">复制完整 Key</button><a class="btn btn2" href="/keys">返回</a></div></div>',u,'keys'))
+            key=new_nw_key(); name=(f.get('name') or 'NW-API Key')[:64]
+            con=db(); con.execute('INSERT INTO nw_api_keys(user_id,name,key_hash,key_prefix,key_suffix,status,quota,quota_used,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(u['id'],name,api_key_hash(key),key[:7],key[-4:],'active',0,0,int(time.time()))); con.commit(); con.close()
+            return self.sendh(shell('新 NW-API Key',f'<div class="card"><p>请立即复制保存，只显示这一次：</p><pre id="full-key">{esc(key)}</pre><div class="actions"><button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById(\'full-key\').innerText).then(()=>this.innerText=\'已复制\')">复制完整 Key</button><a class="btn btn2" href="/keys">返回</a></div><p class="muted">这是 NW-API 自有 Key，后端仅保存 SHA256 hash。</p></div>',u,'keys'))
         if path=='/keys/disable':
+            raw_id=str(f.get('id') or '')
+            kid=int(raw_id.split(':',1)[1]) if raw_id.startswith('nw:') else 0
+            if kid>0:
+                con=db(); con.execute('UPDATE nw_api_keys SET status="disabled" WHERE id=? AND user_id=? AND deleted_at IS NULL',(kid,u['id'])); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'NW-API Key 已禁用','您的 NW-API Key #'+str(kid)+' 已禁用。','key',int(time.time()))); con.commit(); con.close(); return self.redirect('/keys')
             api_post('/keys/disable', {'uid':u['sub2_user_id'],'id':f.get('id')})
             con=db(); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'API Key 已禁用','您的 API Key #'+str(f.get('id'))+' 已禁用。','key',int(time.time()))); con.commit(); con.close()
             safe_notify_mail(u['email'],'NW-API API Key 已禁用',mail_body('API Key 状态变更',['Key 编号：#'+str(f.get('id')),'该 Key 已禁用，不再接受调用。']),'key')
             return self.redirect('/keys')
         if path=='/keys/delete':
+            raw_id=str(f.get('id') or '')
+            kid=int(raw_id.split(':',1)[1]) if raw_id.startswith('nw:') else 0
+            if kid>0:
+                con=db(); con.execute('UPDATE nw_api_keys SET deleted_at=?,status="disabled" WHERE id=? AND user_id=? AND deleted_at IS NULL',(int(time.time()),kid,u['id'])); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'NW-API Key 已删除','您的 NW-API Key #'+str(kid)+' 已删除。','key',int(time.time()))); con.commit(); con.close(); return self.redirect('/keys')
             api_post('/keys/delete', {'uid':u['sub2_user_id'],'id':f.get('id')})
             con=db(); con.execute('INSERT INTO notifications(user_id,title,content,type,created_at) VALUES(?,?,?,?,?)',(u['id'],'API Key 已删除','您的 API Key #'+str(f.get('id'))+' 已删除。','key',int(time.time()))); con.commit(); con.close()
             safe_notify_mail(u['email'],'NW-API API Key 已删除',mail_body('API Key 状态变更',['Key 编号：#'+str(f.get('id')),'该 Key 已删除，请使用新的有效 Key 接入。']),'key')
@@ -987,10 +1013,21 @@ class H(BaseHTTPRequestHandler):
         self.sendh(shell('概览',body,u,'dashboard'))
     def keys_page(self,u):
         ks=api_get('/keys',u['sub2_user_id']).get('keys',[])
+        con=db()
+        nw_rows=con.execute('SELECT id,name,status,key_prefix,key_suffix,quota,quota_used,last_used_at FROM nw_api_keys WHERE user_id=? AND deleted_at IS NULL ORDER BY id DESC',(u['id'],)).fetchall()
+        con.close()
+        rows=[]
+        for x in nw_rows:
+            quota=fmt_usd_as_rmb(x['quota']); used=fmt_usd_as_rmb(x['quota_used']); left='-'
+            try: left=fmt_usd_as_rmb(max(float(x['quota'] or 0)-float(x['quota_used'] or 0),0))
+            except Exception: pass
+            status='启用' if str(x['status'])=='active' else '停用'
+            last=time.strftime('%F %T',time.localtime(x['last_used_at'])) if x['last_used_at'] else '从未使用'
+            shown=f"{x['key_prefix']}******{x['key_suffix']}"
+            rows.append(f'<tr><td><strong>NW #{esc(x["id"])}</strong><br><span class="muted">{esc(x["name"] or "NW-API Key")}</span></td><td>{status}</td><td><code style="background:#f8fafc;color:#0f172a;padding:4px">{esc(shown)}</code><br><span class="muted">NW 自有 Key，hash 存储，只创建时显示完整 Key。</span></td><td><strong>{quota}</strong><br><span class="muted">已用 {used} / 剩余 {left}</span></td><td>{last}</td><td><form class="actions" method="post"><input type="hidden" name="id" value="nw:{esc(x["id"])}"><select name="status"><option value="active">启用</option><option value="disabled">停用</option></select><button class="btn btn2" formaction="/keys/update">保存状态</button><button class="btn btn2" formaction="/keys/rotate">轮换 Key</button><button class="btn btn2" formaction="/keys/delete">删除</button></form></td></tr>')
         def fmt(v):
             try: return fmt_usd_as_rmb(v)
             except Exception: return '¥'+esc(v or '0')
-        rows=[]
         for x in ks:
             quota=fmt(x[4]); used=fmt(x[5]); left='-'
             try: left=fmt_usd_as_rmb(max(float(x[4] or 0)-float(x[5] or 0),0))

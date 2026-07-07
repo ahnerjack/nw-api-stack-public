@@ -7,6 +7,7 @@ streaming responses.
 """
 import json
 import os
+import hashlib
 import ipaddress
 import select
 import socket
@@ -116,6 +117,32 @@ def post_json(path, payload):
 
 
 def verify_key(api_key):
+    if str(api_key or '').startswith('nwk_'):
+        con = sqlite3.connect(PORTAL_DB)
+        con.row_factory = sqlite3.Row
+        try:
+            h = hashlib.sha256(api_key.encode('utf-8')).hexdigest()
+            row = con.execute(
+                'SELECT k.id,k.user_id,k.status,k.quota,k.quota_used,u.status AS user_status '
+                'FROM nw_api_keys k JOIN users u ON u.id=k.user_id '
+                'WHERE k.key_hash=? AND k.deleted_at IS NULL',
+                (h,),
+            ).fetchone()
+            if not row:
+                return {'ok': False, 'code': 'INVALID_API_KEY', 'message': 'Invalid API key'}
+            if row['status'] != 'active' or row['user_status'] != 'active':
+                return {'ok': False, 'code': 'ACCOUNT_DISABLED', 'message': 'Account or key disabled', 'key_id': row['id'], 'user_id': row['user_id'], 'source': 'nw'}
+            try:
+                quota = float(row['quota'] or 0); used = float(row['quota_used'] or 0)
+                if quota > 0 and used >= quota:
+                    return {'ok': False, 'code': 'KEY_QUOTA_EXCEEDED', 'message': 'Key quota exceeded', 'key_id': row['id'], 'user_id': row['user_id'], 'source': 'nw'}
+            except Exception:
+                pass
+            con.execute('UPDATE nw_api_keys SET last_used_at=? WHERE id=?', (int(time.time()), row['id']))
+            con.commit()
+            return {'ok': True, 'key_id': row['id'], 'user_id': row['user_id'], 'source': 'nw'}
+        finally:
+            con.close()
     if KEY_VERIFY_CACHE_TTL <= 0:
         return post_json('/keys/verify', {'key': api_key})
     now = time.monotonic()
@@ -157,6 +184,24 @@ def portal_user_by_sub2(sub2_user_id):
         ).fetchone()
     finally:
         con.close()
+
+
+def portal_user_by_auth_user(user_id):
+    con = sqlite3.connect(PORTAL_DB)
+    con.row_factory = sqlite3.Row
+    try:
+        return con.execute(
+            'SELECT * FROM users WHERE id=? AND status="active"',
+            (user_id,),
+        ).fetchone()
+    finally:
+        con.close()
+
+
+def load_portal_user_for_key(auth_info):
+    if str(auth_info.get('source') or '') == 'nw':
+        return portal_user_by_auth_user(int(auth_info['user_id']))
+    return portal_user_by_sub2(int(auth_info['user_id']))
 
 
 def client_ip(handler):
@@ -285,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
 
         policy_result = PolicyPipeline([
             IPRiskPolicy(risk_allowed),
-            AuthPolicy(verify_key, portal_user_by_sub2),
+            AuthPolicy(verify_key, load_portal_user_for_key),
         ]).run(req)
         if not policy_result.allowed:
             log_access(user_id=policy_result.context.get('sub2_uid'), key_id=policy_result.context.get('key_id'), ip=cip, method=self.command, path=self.path, status=policy_result.http_status, error_code=policy_result.error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
