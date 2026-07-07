@@ -50,6 +50,8 @@ KEY_VERIFY_CACHE_TTL = float(os.environ.get('XAPI_KEY_VERIFY_CACHE_TTL_SECONDS',
 MOCK_CHAT_ENABLED = os.environ.get('XAPI_WRAPPER_MOCK_CHAT', '0').lower() in ('1', 'true', 'yes', 'on')
 PROVIDER_NAME = os.environ.get('NW_API_PROVIDER_NAME', 'sub2api')
 SHADOW_BILLING_ENABLED = os.environ.get('NW_API_SHADOW_BILLING', '1').lower() not in ('0', 'false', 'no', 'off')
+UPSTREAM_MAX_CONCURRENCY = int(os.environ.get('XAPI_UPSTREAM_MAX_CONCURRENCY', '12'))
+UPSTREAM_MAX_CONCURRENCY_PER_KEY = int(os.environ.get('XAPI_UPSTREAM_MAX_CONCURRENCY_PER_KEY', '10'))
 
 
 class TunedThreadingHTTPServer(ThreadingHTTPServer):
@@ -62,6 +64,9 @@ _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _KEY_VERIFY_LOCK = threading.Lock()
 _KEY_VERIFY_CACHE = {}
+_UPSTREAM_GLOBAL_SEMAPHORE = threading.BoundedSemaphore(max(1, UPSTREAM_MAX_CONCURRENCY))
+_UPSTREAM_KEY_LOCK = threading.Lock()
+_UPSTREAM_KEY_COUNTS = {}
 
 
 def init_access_log_schema():
@@ -296,6 +301,34 @@ def record_shadow_usage(portal_user, key_id, method, path, model, status, usage_
         print('record_shadow_usage_failed:', repr(exc), file=sys.stderr)
 
 
+def acquire_upstream_slot(key_id):
+    key = str(key_id or '')
+    got_global = _UPSTREAM_GLOBAL_SEMAPHORE.acquire(blocking=False)
+    if not got_global:
+        return False, 'global'
+    with _UPSTREAM_KEY_LOCK:
+        current = int(_UPSTREAM_KEY_COUNTS.get(key, 0))
+        if current >= max(1, UPSTREAM_MAX_CONCURRENCY_PER_KEY):
+            _UPSTREAM_GLOBAL_SEMAPHORE.release()
+            return False, 'key'
+        _UPSTREAM_KEY_COUNTS[key] = current + 1
+    return True, ''
+
+
+def release_upstream_slot(key_id):
+    key = str(key_id or '')
+    with _UPSTREAM_KEY_LOCK:
+        current = int(_UPSTREAM_KEY_COUNTS.get(key, 0))
+        if current <= 1:
+            _UPSTREAM_KEY_COUNTS.pop(key, None)
+        else:
+            _UPSTREAM_KEY_COUNTS[key] = current - 1
+    try:
+        _UPSTREAM_GLOBAL_SEMAPHORE.release()
+    except ValueError:
+        pass
+
+
 def upstream_request_headers(headers, request_id):
     out = proxy_request_headers(dict(headers.items()) if hasattr(headers, 'items') else dict(headers), request_id)
     if UPSTREAM_API_KEY:
@@ -396,6 +429,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond_mock_chat(body, portal_user, key_id, cip, model, started)
 
         upstream_url = build_upstream_url(UPSTREAM, self.path)
+        acquired, limit_scope = acquire_upstream_slot(key_id)
+        if not acquired:
+            code = 'NW_UPSTREAM_BUSY'
+            msg = 'NW upstream concurrency limit reached; retry shortly'
+            log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=429, error_code=code + ':' + limit_scope, latency_ms=self.elapsed(started), request_id=self.request_id)
+            return json_error(self, code, msg, 429)
         try:
             self.forward_to_upstream(upstream_url, body, portal_user, key_id, cip, model, started)
         except socket.timeout:
@@ -406,6 +445,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=502, error_code='UPSTREAM_ERROR', latency_ms=self.elapsed(started), request_id=self.request_id)
             return json_error(self, 'UPSTREAM_ERROR', str(exc), 502)
+        finally:
+            release_upstream_slot(key_id)
 
     def read_body(self):
         length = int(self.headers.get('Content-Length', '0') or 0)

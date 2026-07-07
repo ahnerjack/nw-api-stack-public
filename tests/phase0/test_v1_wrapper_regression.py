@@ -5,6 +5,7 @@ Runs fully against mock xapi-data and mock upstream; no real key, no real Sub2AP
 no production network required.
 '''
 import contextlib
+import concurrent.futures
 import hashlib
 import http.client
 import importlib.util
@@ -101,6 +102,8 @@ class MockUpstreamHandler(BaseHTTPRequestHandler):
             self.__class__.seen_request_ids.append(rid)
         ln = int(self.headers.get('Content-Length', '0') or 0)
         payload = json.loads(self.rfile.read(ln) or b'{}')
+        if payload.get('sleep_ms'):
+            time.sleep(float(payload.get('sleep_ms')) / 1000.0)
         if payload.get('stream'):
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
@@ -171,7 +174,11 @@ INSERT INTO model_prices(model,input_price,output_price) VALUES('gpt-5.4-mini',1
         cls.wrapper.PORTAL_DB = cls.db_path
         cls.wrapper.DATA_BASE = cls.data.url + '/xapi-data'
         cls.wrapper.UPSTREAM = cls.upstream.url
-        cls.wrapper.UPSTREAM_API_KEY = 'sk-upstream-service-test'
+        cls.wrapper.UPSTREAM_API_KEY = 'test-upstream-service-key'
+        cls.wrapper.UPSTREAM_MAX_CONCURRENCY = 12
+        cls.wrapper.UPSTREAM_MAX_CONCURRENCY_PER_KEY = 3
+        cls.wrapper._UPSTREAM_GLOBAL_SEMAPHORE = threading.BoundedSemaphore(12)
+        cls.wrapper._UPSTREAM_KEY_COUNTS = {}
         cls.wrapper._SCHEMA_READY = False
         cls.wrapper.UPSTREAM_CONNECT_TIMEOUT = 2
         cls.wrapper.UPSTREAM_TIMEOUT = 5
@@ -208,8 +215,36 @@ INSERT INTO model_prices(model,input_price,output_price) VALUES('gpt-5.4-mini',1
         MockUpstreamHandler.seen_authorizations.clear()
         status, headers, raw = request(self.wrapper_server.url, 'POST', '/v1/chat/completions', {'model': 'gpt-5.5', 'messages': [{'role': 'user', 'content': 'hi'}]}, key=self.nw_key)
         self.assertEqual(status, 200, raw)
-        self.assertIn('Bearer sk-upstream-service-test', MockUpstreamHandler.seen_authorizations)
+        self.assertIn('Bearer test-upstream-service-key', MockUpstreamHandler.seen_authorizations)
         self.assertNotIn('Bearer '+self.nw_key, MockUpstreamHandler.seen_authorizations)
+
+    def test_nw_upstream_per_key_concurrency_limit_not_billed(self):
+        old_global = self.wrapper.UPSTREAM_MAX_CONCURRENCY
+        old_per_key = self.wrapper.UPSTREAM_MAX_CONCURRENCY_PER_KEY
+        old_sem = self.wrapper._UPSTREAM_GLOBAL_SEMAPHORE
+        old_counts = self.wrapper._UPSTREAM_KEY_COUNTS
+        try:
+            self.wrapper.UPSTREAM_MAX_CONCURRENCY = 10
+            self.wrapper.UPSTREAM_MAX_CONCURRENCY_PER_KEY = 1
+            self.wrapper._UPSTREAM_GLOBAL_SEMAPHORE = threading.BoundedSemaphore(10)
+            self.wrapper._UPSTREAM_KEY_COUNTS = {}
+            prefix = 'req_limit_test_'
+            def one(i):
+                return request(self.wrapper_server.url, 'POST', '/v1/chat/completions', {'model': 'gpt-5.5', 'messages': [{'role': 'user', 'content': 'hi'}], 'sleep_ms': 250}, key=self.nw_key, headers={'X-Request-Id': prefix+str(i)}, timeout=5)[0]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                statuses = list(ex.map(one, range(4)))
+            self.assertGreaterEqual(statuses.count(429), 1, statuses)
+            con = sqlite3.connect(self.db_path)
+            busy_logs = con.execute("SELECT count(*) FROM api_access_logs WHERE request_id LIKE ? AND status=429 AND error_code LIKE 'NW_UPSTREAM_BUSY%'", (prefix+'%',)).fetchone()[0]
+            billed_busy = con.execute("SELECT count(*) FROM nw_usage_events WHERE request_id LIKE ? AND http_status=429", (prefix+'%',)).fetchone()[0]
+            con.close()
+            self.assertGreaterEqual(busy_logs, 1)
+            self.assertEqual(billed_busy, 0)
+        finally:
+            self.wrapper.UPSTREAM_MAX_CONCURRENCY = old_global
+            self.wrapper.UPSTREAM_MAX_CONCURRENCY_PER_KEY = old_per_key
+            self.wrapper._UPSTREAM_GLOBAL_SEMAPHORE = old_sem
+            self.wrapper._UPSTREAM_KEY_COUNTS = old_counts
 
     def test_nw_owned_key_shadow_usage_and_wallet_ledger(self):
         rid = 'req_stage9_shadow_usage'
