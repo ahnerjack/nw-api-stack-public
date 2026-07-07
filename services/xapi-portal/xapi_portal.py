@@ -47,7 +47,14 @@ CREATE INDEX IF NOT EXISTS idx_mail_logs_created ON mail_logs(created_at);
 CREATE TABLE IF NOT EXISTS payment_methods(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE NOT NULL,kind TEXT NOT NULL DEFAULT 'manual',instructions TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 100,updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS nw_api_keys(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,name TEXT NOT NULL,key_hash TEXT NOT NULL UNIQUE,key_prefix TEXT NOT NULL,key_suffix TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',quota REAL NOT NULL DEFAULT 0,quota_used REAL NOT NULL DEFAULT 0,last_used_at INTEGER,created_at INTEGER NOT NULL,rotated_at INTEGER,deleted_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_nw_api_keys_user ON nw_api_keys(user_id,status,deleted_at);
-CREATE INDEX IF NOT EXISTS idx_nw_api_keys_hash ON nw_api_keys(key_hash);''')
+CREATE INDEX IF NOT EXISTS idx_nw_api_keys_hash ON nw_api_keys(key_hash);
+CREATE TABLE IF NOT EXISTS nw_wallets(user_id INTEGER PRIMARY KEY,balance_usd_micros INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS nw_usage_events(id INTEGER PRIMARY KEY AUTOINCREMENT,request_id TEXT NOT NULL UNIQUE,user_id INTEGER NOT NULL,key_id INTEGER,key_source TEXT NOT NULL DEFAULT 'nw',provider TEXT NOT NULL DEFAULT 'sub2api',method TEXT NOT NULL,path TEXT NOT NULL,model TEXT,status TEXT NOT NULL,http_status INTEGER NOT NULL DEFAULT 0,prompt_tokens INTEGER NOT NULL DEFAULT 0,completion_tokens INTEGER NOT NULL DEFAULT 0,total_tokens INTEGER NOT NULL DEFAULT 0,input_usd_micros INTEGER NOT NULL DEFAULT 0,output_usd_micros INTEGER NOT NULL DEFAULT 0,total_usd_micros INTEGER NOT NULL DEFAULT 0,usage_status TEXT NOT NULL DEFAULT 'no_usage',raw_usage_json TEXT,latency_ms INTEGER NOT NULL DEFAULT 0,error_code TEXT,created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_nw_usage_events_user_created ON nw_usage_events(user_id,created_at);
+CREATE TABLE IF NOT EXISTS nw_wallet_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,usage_event_id INTEGER,request_id TEXT,kind TEXT NOT NULL,amount_usd_micros INTEGER NOT NULL,balance_after_usd_micros INTEGER NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,note TEXT,created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_nw_wallet_ledger_user_created ON nw_wallet_ledger(user_id,created_at);
+CREATE TABLE IF NOT EXISTS nw_providers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,kind TEXT NOT NULL DEFAULT 'openai_compatible',base_url TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',priority INTEGER NOT NULL DEFAULT 100,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS nw_provider_models(id INTEGER PRIMARY KEY AUTOINCREMENT,public_model TEXT NOT NULL,provider_name TEXT NOT NULL,upstream_model TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',created_at INTEGER NOT NULL,UNIQUE(public_model,provider_name));''')
     c.execute('DELETE FROM api_access_logs WHERE created_at < ?', (int(time.time())-90*86400,))
     c.commit()
     if not c.execute('SELECT id FROM users WHERE email=?',(ADMIN_EMAIL,)).fetchone():
@@ -59,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_nw_api_keys_hash ON nw_api_keys(key_hash);''')
         c.execute('INSERT OR IGNORE INTO plans(name,price,monthly_quota,daily_limit,models,note,status) VALUES(?,?,?,?,?,?,"active")',(name,price,quota,daily,models,note))
     for sort_order,name,kind,instructions in [(10,'支付宝','alipay','请按管理员提供的支付宝收款信息付款，并在备注填写订单号和付款流水号。'),(20,'微信','wechat','请按管理员提供的微信收款信息付款，并在备注填写订单号和付款流水号。'),(30,'银行转账','bank','请按管理员提供的银行账户转账，并在备注填写订单号和付款流水号。'),(40,'人工说明','manual','如需其他人工收款方式，请在订单备注填写联系方式和付款说明。')]:
         c.execute('INSERT OR IGNORE INTO payment_methods(name,kind,instructions,enabled,sort_order,updated_at) VALUES(?,?,?,?,?,?)',(name,kind,instructions,1,sort_order,int(time.time())))
+    c.execute('INSERT OR IGNORE INTO nw_providers(name,kind,base_url,status,priority,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',('sub2api','openai_compatible','env:XAPI_UPSTREAM','active',100,int(time.time()),int(time.time())))
     c.commit()
     c.close()
 
@@ -1342,10 +1350,11 @@ console.log(res.choices[0].message.content);</pre></div>
             con.close(); return self.sendcsv('usage.csv',out.getvalue())
         if typ=='usage_ledger':
             today=time.strftime('%Y-%m-%d'); start=qs.get('start',[today])[0] or today; end=qs.get('end',[today])[0] or today
-            d=api_get('/usage-ledger?start='+urllib.parse.quote(start)+'&end='+urllib.parse.quote(end), u['sub2_user_id'])
-            w.writerow(['id','time','model','input_tokens','cache_tokens','output_tokens','total_cost','actual_cost','request_id'])
-            for r in d.get('ledger') or []: w.writerow(r)
-            con.close(); return self.sendcsv('usage-ledger.csv',out.getvalue())
+            ds=day_start(start) or 0; de=(day_start(end) or ds)+86400
+            w.writerow(['id','time','request_id','provider','model','status','http_status','prompt_tokens','completion_tokens','total_tokens','charge_usd_micros','usage_status'])
+            for r in con.execute('SELECT id,created_at,request_id,provider,model,status,http_status,prompt_tokens,completion_tokens,total_tokens,total_usd_micros,usage_status FROM nw_usage_events WHERE user_id=? AND created_at>=? AND created_at<? ORDER BY id DESC',(u['id'],ds,de)):
+                w.writerow([r[0],time.strftime('%F %T',time.localtime(r[1])),r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],r[10],r[11]])
+            con.close(); return self.sendcsv('nw-usage-ledger.csv',out.getvalue())
         if typ=='billing-user':
             w.writerow(['created_at','direction','amount','note'])
             for r in con.execute('SELECT amount,note,created_at FROM billing_logs WHERE user_id=? ORDER BY id DESC',(u['id'],)):

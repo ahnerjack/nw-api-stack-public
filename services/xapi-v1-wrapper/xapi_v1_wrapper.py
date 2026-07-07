@@ -29,6 +29,8 @@ from gateway_core import (
     build_upstream_url, is_models_request, make_request_id_from_headers, normalize_request, proxy_request_headers,
     should_chunk_downstream, should_forward_response_header, upstream_http_error_code,
 )
+from provider_adapter import OpenAICompatibleAdapter, parse_usage_from_body
+from usage_wallet import init_usage_wallet_schema, record_usage_event
 
 HOST = os.environ.get('XAPI_WRAPPER_HOST', '127.0.0.1')
 PORT = int(os.environ.get('XAPI_WRAPPER_PORT', '18182'))
@@ -45,6 +47,8 @@ REQUEST_QUEUE_SIZE = int(os.environ.get('XAPI_WRAPPER_REQUEST_QUEUE_SIZE', '128'
 LOG_ACCESS_ENABLED = os.environ.get('XAPI_WRAPPER_LOG_ACCESS', '1').lower() not in ('0', 'false', 'no', 'off')
 KEY_VERIFY_CACHE_TTL = float(os.environ.get('XAPI_KEY_VERIFY_CACHE_TTL_SECONDS', '0'))
 MOCK_CHAT_ENABLED = os.environ.get('XAPI_WRAPPER_MOCK_CHAT', '0').lower() in ('1', 'true', 'yes', 'on')
+PROVIDER_NAME = os.environ.get('NW_API_PROVIDER_NAME', 'sub2api')
+SHADOW_BILLING_ENABLED = os.environ.get('NW_API_SHADOW_BILLING', '1').lower() not in ('0', 'false', 'no', 'off')
 
 
 class TunedThreadingHTTPServer(ThreadingHTTPServer):
@@ -263,6 +267,34 @@ def log_access(user_id=None, key_id=None, ip='', method='', path='', model='', s
             con.close()
 
 
+def record_shadow_usage(portal_user, key_id, method, path, model, status, usage_snapshot=None, latency_ms=0, error_code='', key_source='nw', request_id=''):
+    if not SHADOW_BILLING_ENABLED:
+        return
+    try:
+        usage_snapshot = usage_snapshot or parse_usage_from_body(b'', '')
+        record_usage_event(
+            PORTAL_DB,
+            request_id=request_id or current_request_id(),
+            user_id=int(portal_user['id']),
+            key_id=key_id,
+            key_source=key_source,
+            provider=PROVIDER_NAME,
+            method=method,
+            path=path,
+            model=model or '',
+            http_status=int(status or 0),
+            usage_status=usage_snapshot.status,
+            prompt_tokens=usage_snapshot.prompt_tokens,
+            completion_tokens=usage_snapshot.completion_tokens,
+            total_tokens=usage_snapshot.total_tokens,
+            raw_usage_json=usage_snapshot.raw_usage_json,
+            latency_ms=latency_ms,
+            error_code=error_code or '',
+        )
+    except Exception as exc:
+        print('record_shadow_usage_failed:', repr(exc), file=sys.stderr)
+
+
 def upstream_reachable(url):
     parts = urlsplit(url)
     host = parts.hostname
@@ -352,7 +384,7 @@ class Handler(BaseHTTPRequestHandler):
                 log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=model_result.http_status, error_code=model_result.error_code, latency_ms=self.elapsed(started), request_id=self.request_id)
                 return json_error(self, model_result.error_code, model_result.error_message, model_result.http_status)
 
-        if MOCK_CHAT_ENABLED and self.path.split('?', 1)[0] == '/v1/chat/completions':
+        if MOCK_CHAT_ENABLED and self.path.split('?', 1)[0] == '/v1/chat/completions' and self.headers.get('X-NW-Mock-Chat') == '1':
             return self.respond_mock_chat(body, portal_user, key_id, cip, model, started)
 
         upstream_url = build_upstream_url(UPSTREAM, self.path)
@@ -388,6 +420,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(body.decode('utf-8') or '{}')
         except Exception:
             payload = {}
+        raw_usage_body = b''
         if payload.get('stream'):
             chunks = [
                 b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
@@ -410,8 +443,10 @@ class Handler(BaseHTTPRequestHandler):
                 'object': 'chat.completion',
                 'model': model or payload.get('model') or '',
                 'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': 'ok'}, 'finish_reason': 'stop'}],
+                'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2},
             }
             data = json.dumps(resp, ensure_ascii=False).encode('utf-8')
+            raw_usage_body = data
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
@@ -419,6 +454,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             self.wfile.flush()
         log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=200, latency_ms=self.elapsed(started), request_id=self.request_id)
+        if self.path.split('?', 1)[0] != '/v1/models':
+            record_shadow_usage(portal_user, key_id, self.command, self.path, model, 200, parse_usage_from_body(raw_usage_body, 'application/json'), self.elapsed(started), request_id=self.request_id)
 
     def forward_to_upstream(self, upstream_url, body, portal_user, key_id, cip, model, started):
         headers = proxy_request_headers(dict(self.headers.items()), getattr(self, 'request_id', '') or current_request_id())
@@ -453,9 +490,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Connection', 'keep-alive')
             self.end_headers()
             try:
+                captured = b''
                 if self.command != 'HEAD':
-                    self.stream_response(response, chunked_downstream, content_length)
+                    captured = self.stream_response(response, chunked_downstream, content_length)
+                usage = parse_usage_from_body(captured, response.headers.get('Content-Type', ''))
                 log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=response.status, latency_ms=self.elapsed(started), request_id=self.request_id)
+                if self.path.split('?', 1)[0] != '/v1/models':
+                    record_shadow_usage(portal_user, key_id, self.command, self.path, model, response.status, usage, self.elapsed(started), request_id=self.request_id)
             except socket.timeout:
                 self.close_connection = True
                 log_access(user_id=portal_user['id'], key_id=key_id, ip=cip, method=self.command, path=self.path, model=model, status=504, error_code='UPSTREAM_STREAM_TIMEOUT', latency_ms=self.elapsed(started), request_id=self.request_id)
@@ -468,6 +509,7 @@ class Handler(BaseHTTPRequestHandler):
         sock.settimeout(STREAM_IDLE_TIMEOUT)
         deadline = time.monotonic() + UPSTREAM_TIMEOUT
         remaining_body = content_length
+        captured = bytearray()
         while True:
             if remaining_body is not None and remaining_body <= 0:
                 break
@@ -484,6 +526,8 @@ class Handler(BaseHTTPRequestHandler):
                 break
             if remaining_body is not None:
                 remaining_body -= len(chunk)
+            if len(captured) < 65536:
+                captured.extend(chunk[:65536-len(captured)])
             if chunked_downstream:
                 self.wfile.write(encode_chunk(chunk))
             else:
@@ -492,6 +536,7 @@ class Handler(BaseHTTPRequestHandler):
         if chunked_downstream:
             self.wfile.write(b'0\r\n\r\n')
             self.wfile.flush()
+        return bytes(captured)
 
     def forward_http_error(self, exc, portal_user, key_id, cip, model, started):
         payload = exc.read()

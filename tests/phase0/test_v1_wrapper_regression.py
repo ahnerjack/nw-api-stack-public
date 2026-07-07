@@ -148,10 +148,13 @@ CREATE TABLE model_prices(model TEXT PRIMARY KEY,input_price REAL DEFAULT 0,outp
 CREATE TABLE risk_rules(kind TEXT,pattern TEXT,action TEXT,status TEXT,id INTEGER PRIMARY KEY AUTOINCREMENT);
 CREATE TABLE api_access_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,key_id INTEGER,ip TEXT,method TEXT,path TEXT,model TEXT,status INTEGER,error_code TEXT,latency_ms INTEGER,created_at INTEGER);
 CREATE TABLE nw_api_keys(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,name TEXT NOT NULL,key_hash TEXT NOT NULL UNIQUE,key_prefix TEXT NOT NULL,key_suffix TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',quota REAL NOT NULL DEFAULT 0,quota_used REAL NOT NULL DEFAULT 0,last_used_at INTEGER,created_at INTEGER NOT NULL,rotated_at INTEGER,deleted_at INTEGER);
+CREATE TABLE nw_wallets(user_id INTEGER PRIMARY KEY,balance_usd_micros INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL);
+CREATE TABLE nw_usage_events(id INTEGER PRIMARY KEY AUTOINCREMENT,request_id TEXT NOT NULL UNIQUE,user_id INTEGER NOT NULL,key_id INTEGER,key_source TEXT NOT NULL DEFAULT 'nw',provider TEXT NOT NULL DEFAULT 'sub2api',method TEXT NOT NULL,path TEXT NOT NULL,model TEXT,status TEXT NOT NULL,http_status INTEGER NOT NULL DEFAULT 0,prompt_tokens INTEGER NOT NULL DEFAULT 0,completion_tokens INTEGER NOT NULL DEFAULT 0,total_tokens INTEGER NOT NULL DEFAULT 0,input_usd_micros INTEGER NOT NULL DEFAULT 0,output_usd_micros INTEGER NOT NULL DEFAULT 0,total_usd_micros INTEGER NOT NULL DEFAULT 0,usage_status TEXT NOT NULL DEFAULT 'no_usage',raw_usage_json TEXT,latency_ms INTEGER NOT NULL DEFAULT 0,error_code TEXT,created_at INTEGER NOT NULL);
+CREATE TABLE nw_wallet_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,usage_event_id INTEGER,request_id TEXT,kind TEXT NOT NULL,amount_usd_micros INTEGER NOT NULL,balance_after_usd_micros INTEGER NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,note TEXT,created_at INTEGER NOT NULL);
 INSERT INTO users(id,email,status,sub2_user_id) VALUES(1,'u@example.com','active',101);
 INSERT INTO user_models(user_id,model,enabled) VALUES(1,'gpt-5.5',1);
-INSERT INTO model_prices(model) VALUES('gpt-5.5');
-INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
+INSERT INTO model_prices(model,input_price,output_price) VALUES('gpt-5.5',100,200);
+INSERT INTO model_prices(model,input_price,output_price) VALUES('gpt-5.4-mini',10,20);
 ''')
         nw_key = 'nwk_test_stage8_key_1234567890'
         con.execute('INSERT INTO nw_api_keys(id,user_id,name,key_hash,key_prefix,key_suffix,status,quota,quota_used,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(51,1,'stage8',hashlib.sha256(nw_key.encode()).hexdigest(),nw_key[:7],nw_key[-4:],'active',0,0,int(time.time())))
@@ -164,9 +167,11 @@ INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
         cls.wrapper.PORTAL_DB = cls.db_path
         cls.wrapper.DATA_BASE = cls.data.url + '/xapi-data'
         cls.wrapper.UPSTREAM = cls.upstream.url
+        cls.wrapper._SCHEMA_READY = False
         cls.wrapper.UPSTREAM_CONNECT_TIMEOUT = 2
         cls.wrapper.UPSTREAM_TIMEOUT = 5
         cls.wrapper.STREAM_IDLE_TIMEOUT = 2
+        cls.wrapper.MOCK_CHAT_ENABLED = True
         cls.wrapper_server = ServerThread(cls.wrapper.Handler).start()
 
     @classmethod
@@ -193,6 +198,27 @@ INSERT INTO model_prices(model) VALUES('gpt-5.4-mini');
         row = con.execute('SELECT last_used_at FROM nw_api_keys WHERE id=51').fetchone()
         con.close()
         self.assertIsNotNone(row[0])
+
+    def test_nw_owned_key_shadow_usage_and_wallet_ledger(self):
+        rid = 'req_stage9_shadow_usage'
+        status, headers, raw = request(self.wrapper_server.url, 'POST', '/v1/chat/completions', {'model': 'gpt-5.5', 'messages': [{'role': 'user', 'content': 'hi'}]}, key=self.nw_key, headers={'X-Request-Id': rid, 'X-NW-Mock-Chat': '1'})
+        self.assertEqual(status, 200, raw)
+        self.assertEqual(json.loads(raw)['usage']['total_tokens'], 2)
+        con = sqlite3.connect(self.db_path)
+        ev = None; led = None
+        for _ in range(20):
+            ev = con.execute('SELECT request_id,prompt_tokens,completion_tokens,total_usd_micros,usage_status FROM nw_usage_events WHERE request_id=?', (rid,)).fetchone()
+            led = con.execute('SELECT kind,amount_usd_micros FROM nw_wallet_ledger WHERE request_id=?', (rid,)).fetchone()
+            if ev and led:
+                break
+            time.sleep(0.05)
+        con.close()
+        self.assertEqual(ev[0], rid)
+        self.assertEqual(ev[1:3], (1, 1))
+        self.assertGreater(ev[3], 0)
+        self.assertEqual(ev[4], 'reported')
+        self.assertEqual(led[0], 'usage_debit_shadow')
+        self.assertLess(led[1], 0)
 
     def test_missing_key(self):
         status, headers, raw = request(self.wrapper_server.url, 'GET', '/v1/models', key=None)
