@@ -9,6 +9,11 @@ if [ -f services/xapi-v1-wrapper/xapi_v1_wrapper.py ]; then
   if [ -f services/xapi-v1-wrapper/gateway_core.py ]; then
     install -m 0644 services/xapi-v1-wrapper/gateway_core.py /opt/xapi-v1-wrapper/gateway_core.py
   fi
+  for helper in provider_adapter.py usage_wallet.py; do
+    if [ -f "services/xapi-v1-wrapper/$helper" ]; then
+      install -m 0644 "services/xapi-v1-wrapper/$helper" "/opt/xapi-v1-wrapper/$helper"
+    fi
+  done
   python3 -m py_compile /opt/xapi-v1-wrapper/xapi_v1_wrapper.py
 fi
 if [ -f systemd/xapi-v1-wrapper.service ]; then
